@@ -1,0 +1,42 @@
+{
+  "name": "clawpanel",
+  "version": "0.1.0",
+  "description": "ClawPanel open-source connect client + MCP server. Free/open surface: npx clawpanel@latest connect, the local MCP server, and the graph compiler. Paid: the server-side brain (memory distillation, governance, approvals, vault, audit, hosted graphs, marketplace).",
+  "keywords": [
+    "clawpanel",
+    "mcp",
+    "model-context-protocol",
+    "agents",
+    "workspace",
+    "cli"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "clawpanel": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsx src/cli.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
