@@ -8,6 +8,7 @@
  *   npx clawpanel@latest --version | --help
  */
 
+import { pair, run, RuntimeError } from "./runtime/client.js";
 import { runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
@@ -16,6 +17,9 @@ const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, 
 
 USAGE
   clawpanel connect [options]        Write MCP client config (.mcp.json)
+  clawpanel runtime pair --name NAME [--api-url ORIGIN]
+  clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
+  clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
   clawpanel serve [options]          Start the local stdio MCP server
   clawpanel --version                Print version
   clawpanel --help                   Print this help
@@ -88,6 +92,21 @@ export function boolFlag(flags: Record<string, string | boolean>, name: string):
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "runtime") {
+    const action = argv[1];
+    const { flags } = parseArgs(argv.slice(2));
+    const allowed = action === "run" ? ["endpoint", "model"] : ["name", "api-url"];
+    if (!['pair', 'reconnect', 'run'].includes(action ?? '') || Object.keys(flags).some(k => !allowed.includes(k))) throw new RuntimeError('Use runtime pair/reconnect --name NAME [--api-url ORIGIN], or runtime run --endpoint URL --model MODEL. Runtime API keys use CLAWPANEL_LOCAL_RUNTIME_API_KEY environment only.');
+    const controller = new AbortController();
+    const stop = () => controller.abort();
+    process.once('SIGINT', stop); process.once('SIGTERM', stop);
+    try {
+      if (action === 'run') await run({ endpoint: stringFlag(flags, 'endpoint') ?? '', model: stringFlag(flags, 'model') ?? '', runtimeApiKey: process.env.CLAWPANEL_LOCAL_RUNTIME_API_KEY }, { signal: controller.signal });
+      else await pair({ name: stringFlag(flags, 'name') ?? '', apiUrl: stringFlag(flags, 'api-url') ?? 'https://clawpanel.app', reconnect: action === 'reconnect' }, { signal: controller.signal });
+    } catch (e) { if (!controller.signal.aborted) throw e; }
+    finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+    return 0;
+  }
   const { command, flags } = parseArgs(argv);
 
   if (flags.help) {
@@ -145,7 +164,7 @@ main(process.argv.slice(2))
     process.exitCode = code;
   })
   .catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = process.argv[2] === "runtime" ? (err instanceof RuntimeError ? err.message : "Runtime stopped or failed. Check pairing, private storage, and endpoint configuration.") : (err instanceof Error ? err.message : String(err));
     process.stderr.write(`error: ${message}\n`);
     process.exitCode = 1;
   });
