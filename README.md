@@ -67,7 +67,7 @@ The server exposes workspace-scoped tools (`workspace_status`,
 ### Hosted — the paid server-side brain
 
 ```bash
-npx clawpanel@latest connect --hosted --token <your-token>
+npx clawpanel@latest connect --hosted --token <your-token> --runtime-key <your-runtime-key>
 # optional: --api-url https://clawpanel.app
 ```
 
@@ -86,15 +86,30 @@ web app's Connect flow).
 ## CLI reference
 
 ```text
-clawpanel connect [--hosted] [--token <t>] [--api-url <u>]
+clawpanel connect [--hosted] [--token <t>] [--runtime-key <key>] [--api-url <u>]
                   [--output <f>] [--print] [--workspace <dir>]
 clawpanel serve [--workspace <dir>]
 clawpanel --version | --help
 ```
 
 `connect` without `--hosted` writes the free local config. `connect --hosted`
-requires `--token` (or the `CLAWPANEL_TOKEN` env var) and writes the hosted
-HTTP config.
+requires both `--token` (or `CLAWPANEL_TOKEN`) and `--runtime-key` (or
+`CLAWPANEL_RUNTIME_KEY`). It writes `Authorization: Bearer …` and `x-runtime-key`
+headers. Missing or blank credentials fail closed. Supply the token and matching
+runtime key from the same Connect issuance; a legacy token alone cannot connect.
+Prefer environment variables provisioned by your secret manager to avoid shell
+history/process-argument exposure. Explicit flags take precedence over environment
+variables. `--api-url` accepts an HTTPS origin only, without credentials, path,
+query, or fragment. For local development, HTTP is allowed only for `localhost`,
+`127.0.0.1`, or `[::1]` (with an optional port).
+
+Config files are created exclusively with owner-only permissions (`0600` on POSIX).
+An existing file or symlink is never overwritten, including existing ClawPanel
+entries. If `.mcp.json` exists, use `--output` with a new filename and manually
+merge only the `clawpanel` entry into your client's private config, preserving
+other servers. Keep credential files out of version control and restrict their
+permissions. `--print` outputs credentials in plaintext; avoid logs, shared
+terminals, and CI output. Local mode does not require or include hosted credentials.
 
 ## Status: initial open-source scaffold (ZEUG-546)
 

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -31,6 +31,7 @@ describe("runConnect", () => {
       workspaceDir: dir,
       hosted: true,
       token: "tok-abc",
+      runtimeKey: "runtime-abc",
       print: false,
     });
     expect(result.writtenTo).toBe(join(dir, ".mcp.json"));
@@ -80,4 +81,40 @@ describe("parseArgs", () => {
     expect(parseArgs(["-v"]).flags.version).toBe(true);
     expect(parseArgs(["-h"]).flags.help).toBe(true);
   });
+});
+
+describe("config file safety", () => {
+  const hosted = { hosted: true, token: "fixture-token", runtimeKey: "fixture-key", print: false };
+  it("creates private credential files", async () => {
+    const result = await runConnect({ ...hosted, workspaceDir: dir });
+    expect((await stat(result.writtenTo!)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(result.writtenTo!, "utf8")).mcpServers.clawpanel.headers["x-runtime-key"]).toBe("fixture-key");
+  });
+  it.each(['{"mcpServers":{"other":{"command":"other"}}}', '{invalid', '{"mcpServers":{"clawpanel":{"command":"original"}}}'])("preserves an existing file byte for byte", async (original) => {
+    const path = join(dir, ".mcp.json");
+    await writeFile(path, original, { mode: 0o644 });
+    await expect(runConnect({ ...hosted, workspaceDir: dir })).rejects.toThrow(/already exists/);
+    expect(await readFile(path, "utf8")).toBe(original);
+    expect((await stat(path)).mode & 0o777).toBe(0o644);
+  });
+  it("does not follow output symlinks", async () => {
+    const target = join(dir, "target");
+    await writeFile(target, "untouched");
+    await symlink(target, join(dir, ".mcp.json"));
+    await expect(runConnect({ ...hosted, workspaceDir: dir })).rejects.toThrow(/already exists/);
+    expect(await readFile(target, "utf8")).toBe("untouched");
+  });
+  it("does not create a file when runtime key validation fails", async () => {
+    await expect(runConnect({ ...hosted, runtimeKey: "", workspaceDir: dir })).rejects.toThrow(/runtime-key/);
+    await expect(stat(join(dir, ".mcp.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("parses runtime-key in both supported syntaxes", () => {
+    expect(parseArgs(["connect", "--runtime-key", "fixture-key"]).flags["runtime-key"]).toBe("fixture-key");
+    expect(parseArgs(["connect", "--runtime-key=fixture-key"]).flags["runtime-key"]).toBe("fixture-key");
+  });
+});
+
+it.each(["token", "runtime-key"])("rejects explicit valueless --%s instead of falling back to environment", (flag) => {
+  expect(() => parseArgs(["connect", `--${flag}`])).toThrow("requires a value");
+  expect(() => parseArgs(["connect", `--${flag}`, "--print"])).toThrow("requires a value");
 });
