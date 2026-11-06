@@ -207,3 +207,7 @@ clients; after a crash, confirm all clients stopped before manually removing
 
 Verification uses synthetic in-memory fake HTTP, not live pairing or bot calls:
 `npm test && npm run typecheck && npm run build`.
+
+Optional cross-repository HTTP/service/client proof is documented in
+[integration/README.md](integration/README.md). It is excluded from normal tests
+and uses only synthetic state and a loopback fake bot.

@@ -40,3 +40,13 @@ Independent review follow-up: result HTTP409 now retires stale result delivery
 without deleting admission; replies align to server max16000; unsafe writable
 ancestors are refused (root-owned sticky temp permitted for synthetic fixtures).
 Regression suite passed: 69 tests, strict typecheck, build. No real network calls.
+
+Cross-repository integration proof (2026-11-06):
+`./node_modules/.bin/vitest run --config integration/vitest.config.ts` passed 1/1
+against the sibling runtime-companion-20261106 working tree (backend base HEAD
+b58bb4c2276537187423ff07cab0f54e9f3bdbc3 plus staged runtime implementation).
+Actual client functions, actual web HTTP/service code and injected memory adapter
+completed pair/authenticated approval/enqueue/poll/local HTTP bot/result, lost-ACK
+restart, reconnect and revoke. Two unique jobs generated exactly two fake bot
+calls and two persisted fixture replies. Normal tests passed 69/69, typecheck and
+build passed. See integration/README.md for repeatable command and evidence limits.
