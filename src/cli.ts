@@ -3,7 +3,7 @@
  * clawpanel CLI — open-source connect client + MCP server (ZEUG-546).
  *
  *   npx clawpanel@latest connect            # free: local stdio MCP config
- *   npx clawpanel@latest connect --hosted --token <t> [--api-url <u>]
+ *   npx clawpanel@latest connect --hosted --token <t> --runtime-key <key> [--api-url <u>]
  *   npx clawpanel@latest serve              # start the local stdio MCP server
  *   npx clawpanel@latest --version | --help
  */
@@ -24,6 +24,7 @@ CONNECT OPTIONS
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
   --token <token>      Bearer token for the hosted brain (or CLAWPANEL_TOKEN env)
+  --runtime-key <key> Runtime possession key (or CLAWPANEL_RUNTIME_KEY env)
   --api-url <url>      Hosted API base URL (default: https://clawpanel.app)
   --output <file>      Write config to a specific file (default: .mcp.json)
   --print              Print the config JSON instead of writing a file
@@ -70,6 +71,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
+  for (const name of ["token", "runtime-key"]) {
+    if (flags[name] === true) throw new Error(`--${name} requires a value`);
+  }
   command = positionals[0];
   return { command, flags };
 }
@@ -104,6 +108,7 @@ async function main(argv: string[]): Promise<number> {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
         token: stringFlag(flags, "token"),
+        runtimeKey: stringFlag(flags, "runtime-key"),
         apiUrl: stringFlag(flags, "api-url"),
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
