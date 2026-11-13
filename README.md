@@ -146,3 +146,68 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## License
 
 [MIT](./LICENSE) © 2026 Sidarau / Zeug Lab.
+
+## Outbound runtime companion (staged, not yet published)
+
+This is separate from `connect` (MCP configuration) and the native desktop app.
+It connects an **already running, operator-managed local OpenAI-compatible bot**
+to one browser-approved ClawPanel agent. It does not install Hermes/Grok, sign in
+for you, start a shell, or install a background service. Requires Node 20.3+.
+The runtime API must be deployed before pairing can succeed. These commands
+refer to this source build, not the currently published npm package:
+
+```sh
+npm run build
+node dist/cli.js runtime pair --name Omarchy --api-url https://clawpanel.app
+# Open the printed URL yourself, sign in, review account/agent, and approve.
+node dist/cli.js runtime run --endpoint http://127.0.0.1:8080/v1 --model YOUR_MODEL
+```
+
+The endpoint is a base URL; `/chat/completions` is appended. Only numeric IPv4
+or IPv6 loopback HTTP/HTTPS addresses are accepted. Provide the existing local
+runtime's API key through `CLAWPANEL_LOCAL_RUNTIME_API_KEY` in the environment,
+never as an argument. No provider defaults or paid calls are configured.
+The server cannot choose the endpoint/model or request a command. A connected
+bot may have its own tools: configure its permissions separately. Messages and
+session/request IDs are forwarded to that bot; no device credential is.
+
+Pairing expires after ten minutes without browser approval. Approved access
+expires at the server's date (up to 30 days); revoke it in ClawPanel. The device
+credential is written only after approval to `~/.config/clawpanel/runtime.json`
+(mode 0600, directory 0700). Existing unsafe permissions or symlinks are refused,
+not silently repaired. All API calls stay at the exact configured HTTPS origin
+(numeric loopback HTTP permitted for development), with redirects disabled.
+The approval URL must match `/dashboard/runtime?code=SHORTCODE` at that origin.
+No tokens or message contents are logged. Journal files contain cached replies,
+so protect this private directory and exclude it from shared backups.
+
+Run is foreground only. Ctrl-C/SIGTERM stops it; requests have a 60-second timeout
+and failed connections use bounded 3–30 second backoff, stopping after ten
+consecutive failures. Other permanent 4xx responses stop immediately. Revoked/expired access
+stops the client. `runtime reconnect --name NAME --api-url ORIGIN` explicitly
+replaces local credentials **only after** new browser approval. It does not
+revoke the old server pairing; do that in ClawPanel. Neither command auto-opens
+approval nor stores account passwords.
+
+The private journal is fsynced before each runtime admission and before posting
+its result. Cached results are resent idempotently after restart. Interrupted
+admissions report an uncertain failure and are never automatically re-executed.
+This is **best-effort at-most-once local admission**, not exactly-once remote tool
+execution. It depends on preserving the journal and reliable local storage.
+A new lease for an existing job is refused. A result rejected as an expired lease
+(HTTP 409) is retired locally without deleting its admission record, so later
+jobs can proceed. Replies over 16000 characters become bounded generic errors. To prevent replay after eviction,
+the journal fails closed at 128 jobs instead of pruning history. At capacity,
+review jobs, revoke the old runtime and explicitly reconnect as a new runtime;
+old journals remain private and must not be deleted while their runtime is active.
+This intentionally conservative staging limit needs a server-backed safe-retention
+policy before unattended long-running usage. A process lock prevents concurrent
+clients; after a crash, confirm all clients stopped before manually removing
+`~/.config/clawpanel/runtime.lock`. Never remove it while a client is running.
+
+Verification uses synthetic in-memory fake HTTP, not live pairing or bot calls:
+`npm test && npm run typecheck && npm run build`.
+
+Optional cross-repository HTTP/service/client proof is documented in
+[integration/README.md](integration/README.md). It is excluded from normal tests
+and uses only synthetic state and a loopback fake bot.
