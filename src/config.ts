@@ -40,14 +40,14 @@ export interface ClientConfig {
 
 /**
  * Free, local, account-less config: point the agent at the open-source
- * MCP server running via npx. No token required.
+ * MCP server using the current installed entry point. No token required.
  */
-export function buildLocalConfig(workspaceDir: string): ClientConfig {
+export function buildLocalConfig(workspaceDir: string, local?: { node: string; cli: string }): ClientConfig {
   return {
     mcpServers: {
       clawpanel: {
-        command: "npx",
-        args: ["-y", "clawpanel@latest", "serve"],
+        command: local?.node ?? "npx",
+        args: local ? [local.cli, "serve"] : ["-y", "clawpanel@latest", "serve"],
         env: {
           CLAWPANEL_WORKSPACE: workspaceDir,
         },

@@ -4,10 +4,19 @@ The open-source connect client and MCP server for
 [ClawPanel](https://clawpanel.app) — a shared intelligence workspace for
 people and AI agents.
 
+Install from the [ClawPanel landing page](https://clawpanel.app/#connect)
+or follow the source steps under Development. The npm artifact is prepared
+separately for publication.
+
 ```bash
-npx clawpanel@latest connect     # free: connect an agent to a local workspace
-npx clawpanel@latest serve       # free: run the local MCP server (stdio)
+clawpanel connect                # configure a local MCP client
+clawpanel skills sync            # add the bundled playbooks to this project
+clawpanel skills run analytics-dashboard
 ```
+
+Run the resulting playbook in your AI client with your authorized tools and
+data. For hosted access, `clawpanel login` opens the existing sign-in page;
+it does not import your browser session or create credentials.
 
 ## The open-core split
 
@@ -16,7 +25,7 @@ wedge; the server-side brain is the paid service.
 
 | Surface | Open (this repo, MIT) | Paid (clawpanel.app) |
 | --- | --- | --- |
-| Connect client | `npx clawpanel@latest connect` — one-line agent onboarding | — |
+| Connect client | `clawpanel connect` — one-line agent onboarding | — |
 | MCP server | Local stdio server: workspace notes, free-tier run counter | Hosted HTTP MCP at `https://clawpanel.app/api/mcp` |
 | Graph compiler | Roadmap (see below) | Hosted graphs |
 | Server-side brain | — | Memory distillation, governance, approvals, vault, audit, hosted graphs, marketplace |
@@ -42,7 +51,7 @@ distillation, approvals, vault, and audit.
 
 ```bash
 cd your-project
-npx clawpanel@latest connect
+clawpanel connect
 ```
 
 Writes `.mcp.json` pointing your MCP client (Claude Code, Cursor, Codex, any
@@ -52,8 +61,8 @@ MCP client) at the local server:
 {
   "mcpServers": {
     "clawpanel": {
-      "command": "npx",
-      "args": ["-y", "clawpanel@latest", "serve"],
+      "command": "/path/to/installed/node",
+      "args": ["/path/to/installed/dist/cli.js", "serve"],
       "env": { "CLAWPANEL_WORKSPACE": "/path/to/your-project" }
     }
   }
@@ -67,7 +76,7 @@ The server exposes workspace-scoped tools (`workspace_status`,
 ### Hosted — the paid server-side brain
 
 ```bash
-npx clawpanel@latest connect --hosted --token <your-token> --runtime-key <your-runtime-key>
+clawpanel connect --hosted --token <your-token> --runtime-key <your-runtime-key>
 # optional: --api-url https://clawpanel.app
 ```
 
@@ -154,7 +163,7 @@ It connects an **already running, operator-managed local OpenAI-compatible bot**
 to one browser-approved ClawPanel agent. It does not install Hermes/Grok, sign in
 for you, start a shell, or install a background service. Requires Node 20.3+.
 The runtime API must be deployed before pairing can succeed. These commands
-refer to this source build, not the currently published npm package:
+use the installed standalone launcher or a source build. The runtime companion uses POSIX file permissions and is not supported on Windows:
 
 ```sh
 npm run build

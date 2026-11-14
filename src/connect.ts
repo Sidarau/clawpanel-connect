@@ -23,6 +23,7 @@ import {
 export interface ConnectOptions {
   workspaceDir: string;
   hosted: boolean;
+  localEntry?: { node: string; cli: string };
   token?: string;
   runtimeKey?: string;
   apiUrl?: string;
@@ -51,7 +52,7 @@ export function buildConnectConfig(opts: ConnectOptions): ClientConfig {
     }
     return buildHostedConfig(opts.apiUrl ?? API_URL_DEFAULT, token, runtimeKey);
   }
-  return buildLocalConfig(resolve(opts.workspaceDir));
+  return buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry);
 }
 
 export async function runConnect(opts: ConnectOptions): Promise<ConnectResult> {

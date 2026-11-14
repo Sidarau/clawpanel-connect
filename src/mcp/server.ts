@@ -9,7 +9,7 @@
  * brain (memory distillation, governance, approvals, vault, audit).
  */
 
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, isAbsolute, resolve, sep } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -22,11 +22,13 @@ import {
 import { marketplace, partner, commerceCommand } from "../commerce.js";
 import { FREE_TIER } from "../config.js";
 
-const require = createRequire(import.meta.url);
-const pkg = require("../../package.json") as { name: string; version: string };
-
+declare const __CLAWPANEL_BUNDLE_VERSION__: string | undefined;
 export const SERVER_NAME = "clawpanel";
-export const SERVER_VERSION = pkg.version;
+export const SERVER_VERSION =
+  typeof __CLAWPANEL_BUNDLE_VERSION__ !== "undefined"
+    ? __CLAWPANEL_BUNDLE_VERSION__
+    : (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
+
 
 export interface WorkspaceServerOptions {
   workspaceDir: string;
