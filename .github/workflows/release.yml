@@ -1,0 +1,27 @@
+name: Prepare CLI release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm test
+      - run: mkdir artifacts && npm pack --pack-destination artifacts
+      - run: node scripts/package-standalone.mjs artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clawpanel-cli-release
+          path: artifacts/
+          if-no-files-found: error

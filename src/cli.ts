@@ -8,7 +8,11 @@
  *   npx clawpanel@latest --version | --help
  */
 
+import { fileURLToPath } from "node:url";
 import { pair, run, RuntimeError } from "./runtime/client.js";
+import { openSignIn } from "./login.js";
+import { skillsCommand } from "./skills.js";
+import { commerceCommand } from "./commerce.js";
 import { runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
@@ -17,9 +21,16 @@ const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, 
 
 USAGE
   clawpanel connect [options]        Write MCP client config (.mcp.json)
+  clawpanel login [--print]          Open ClawPanel sign-in
+  clawpanel skills list|sync|run     Install or read a local workflow playbook
   clawpanel runtime pair --name NAME [--api-url ORIGIN]
   clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
+  clawpanel marketplace buy|sell [--json]
+  clawpanel partner dashboard [--json]
+  clawpanel partner share --code CODE [--json]
+  clawpanel starter open [--json]
+  clawpanel credits open [--json]
   clawpanel serve [options]          Start the local stdio MCP server
   clawpanel --version                Print version
   clawpanel --help                   Print this help
@@ -92,6 +103,20 @@ export function boolFlag(flags: Record<string, string | boolean>, name: string):
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "login") {
+    if (argv.length > 2 || (argv[1] && argv[1] !== "--print")) throw new Error("Use clawpanel login [--print].");
+    process.stdout.write(openSignIn({ printOnly: argv[1] === "--print" }) + "\n");
+    return 0;
+  }
+  if (argv[0] === "skills") {
+    process.stdout.write(await skillsCommand(argv.slice(1)) + "\n");
+    return 0;
+  }
+  if (["marketplace", "partner", "starter", "credits"].includes(argv[0] ?? "")) {
+    const { json, data } = commerceCommand(argv);
+    process.stdout.write((json ? JSON.stringify(data) : ("shareText" in data ? data.shareText : `${data.url}\n${data.handoff}`)) + "\n");
+    return 0;
+  }
   if (argv[0] === "runtime") {
     const action = argv[1];
     const { flags } = parseArgs(argv.slice(2));
@@ -126,6 +151,7 @@ async function main(argv: string[]): Promise<number> {
       const result = await runConnect({
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
+        localEntry: { node: process.execPath, cli: fileURLToPath(import.meta.url) },
         token: stringFlag(flags, "token"),
         runtimeKey: stringFlag(flags, "runtime-key"),
         apiUrl: stringFlag(flags, "api-url"),
