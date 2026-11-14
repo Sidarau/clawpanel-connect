@@ -9,6 +9,7 @@
  */
 
 import { pair, run, RuntimeError } from "./runtime/client.js";
+import { commerceCommand } from "./commerce.js";
 import { runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
@@ -20,6 +21,11 @@ USAGE
   clawpanel runtime pair --name NAME [--api-url ORIGIN]
   clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
+  clawpanel marketplace buy|sell [--json]
+  clawpanel partner dashboard [--json]
+  clawpanel partner share --code CODE [--json]
+  clawpanel starter open [--json]
+  clawpanel credits open [--json]
   clawpanel serve [options]          Start the local stdio MCP server
   clawpanel --version                Print version
   clawpanel --help                   Print this help
@@ -92,6 +98,11 @@ export function boolFlag(flags: Record<string, string | boolean>, name: string):
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (["marketplace", "partner", "starter", "credits"].includes(argv[0] ?? "")) {
+    const { json, data } = commerceCommand(argv);
+    process.stdout.write((json ? JSON.stringify(data) : ("shareText" in data ? data.shareText : `${data.url}\n${data.handoff}`)) + "\n");
+    return 0;
+  }
   if (argv[0] === "runtime") {
     const action = argv[1];
     const { flags } = parseArgs(argv.slice(2));

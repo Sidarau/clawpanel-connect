@@ -211,3 +211,22 @@ Verification uses synthetic in-memory fake HTTP, not live pairing or bot calls:
 Optional cross-repository HTTP/service/client proof is documented in
 [integration/README.md](integration/README.md). It is excluded from normal tests
 and uses only synthetic state and a loopback fake bot.
+
+### Workflows, credits, and partner referrals
+
+```sh
+clawpanel marketplace buy --json
+clawpanel marketplace sell --json
+clawpanel partner dashboard
+clawpanel partner share --code YOUR_32_CHARACTER_CODE
+clawpanel starter open
+clawpanel credits open
+```
+
+The local MCP server exposes the same handoffs through
+`clawpanel_marketplace_contact`, `clawpanel_partner_referral`, and
+`clawpanel_starter_open`. Ask your AI to draft an inquiry or prepare a
+referral post, then review it before sharing. The referral output includes
+commission disclosure. Partner earnings, billing, and marketplace inquiries
+use the official web destinations; these commands do not send messages,
+complete purchases, or move funds.
