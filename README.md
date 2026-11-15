@@ -211,3 +211,41 @@ Verification uses synthetic in-memory fake HTTP, not live pairing or bot calls:
 Optional cross-repository HTTP/service/client proof is documented in
 [integration/README.md](integration/README.md). It is excluded from normal tests
 and uses only synthetic state and a loopback fake bot.
+
+### Connected AI task pilot
+
+In the ClawPanel web app, open **Library & settings**. Under **Connected AI task**,
+choose an existing Work task and a shared Library page, then publish the SOP
+revision. Create a named connection for each AI. A client that supports remote
+MCP can use the HTTP configuration shown there and call `task_sop_context`
+followed by `task_sop_update`.
+
+For a shell-capable AI, provide that connection's credentials in its private
+environment as `CLAWPANEL_TOKEN` and `CLAWPANEL_RUNTIME_KEY`. From a built copy
+of this CLI (Node 20 or newer):
+
+```sh
+clawpanel task context
+clawpanel task update < update.json
+```
+
+Both commands accept `--api-url <origin>` for a ClawPanel preview. The first
+returns the current SOP, task ID, task version and settings version. Use those
+values and the SOP's revision in the update:
+
+```json
+{
+  "task_id": "demo-task",
+  "task_version": 1,
+  "settings_version": 1,
+  "sop_revision": "11111111-1111-4111-8111-111111111111",
+  "request_id": "22222222-2222-4222-8222-222222222222",
+  "summary": "The revised task summary, following the Library SOP."
+}
+```
+
+Use a new request UUID for each update. Retry the same payload with the same
+UUID if delivery is uncertain. When the task or SOP version changes, read
+context again before updating. The update returns the app link. The workplace
+owner can pause AI updates, activate an earlier SOP revision, or revoke a
+connection from the same panel.
