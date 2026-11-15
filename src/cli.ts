@@ -9,6 +9,7 @@
  */
 
 import { pair, run, RuntimeError } from "./runtime/client.js";
+import { readTaskUpdate, runTask } from "./task.js";
 import { runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
@@ -20,6 +21,8 @@ USAGE
   clawpanel runtime pair --name NAME [--api-url ORIGIN]
   clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
+  clawpanel task context [--api-url ORIGIN]
+  clawpanel task update [--api-url ORIGIN] < update.json
   clawpanel serve [options]          Start the local stdio MCP server
   clawpanel --version                Print version
   clawpanel --help                   Print this help
@@ -33,6 +36,13 @@ CONNECT OPTIONS
   --output <file>      Write config to a specific file (default: .mcp.json)
   --print              Print the config JSON instead of writing a file
   --workspace <dir>    Workspace directory for the local server (default: cwd)
+
+TASK CONNECTION
+  Create a named connection in ClawPanel's Connected AI task panel.
+  Set CLAWPANEL_TOKEN and CLAWPANEL_RUNTIME_KEY in the private environment.
+  Read task context before drafting an update. Update JSON on stdin requires
+  task_id, task_version, settings_version, sop_revision, request_id (UUID),
+  and summary. Responses are JSON on stdout.
 
 SERVE OPTIONS
   --workspace <dir>    Workspace directory (default: cwd; env CLAWPANEL_WORKSPACE)
@@ -92,6 +102,27 @@ export function boolFlag(flags: Record<string, string | boolean>, name: string):
 }
 
 async function main(argv: string[]): Promise<number> {
+  if (argv[0] === "task" && argv[1] !== "--help" && argv[1] !== "-h") {
+    const action = argv[1];
+    const rest = argv.slice(2);
+    const { flags, command } = parseArgs(rest);
+    if ((action !== "context" && action !== "update") || command
+      || Object.keys(flags).some((key) => key !== "api-url")
+      || (flags["api-url"] !== undefined && !stringFlag(flags, "api-url"))) {
+      throw new Error("Use task context or task update with an optional --api-url ORIGIN.");
+    }
+    const result = await runTask(action, {
+      apiUrl: stringFlag(flags, "api-url"),
+      token: process.env.CLAWPANEL_TOKEN,
+      runtimeKey: process.env.CLAWPANEL_RUNTIME_KEY,
+      input: action === "update" ? await readTaskUpdate(process.stdin).catch((error: unknown) => {
+        if (error instanceof SyntaxError) throw new Error("Send valid task update JSON on stdin.");
+        throw error;
+      }) : undefined,
+    });
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
   if (argv[0] === "runtime") {
     const action = argv[1];
     const { flags } = parseArgs(argv.slice(2));
