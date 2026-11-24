@@ -1,0 +1,41 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "clawpanel",
+  "version": "0.1.0",
+  "description": "Connect your ClawPanel workspace and use its knowledge in your AI session.",
+  "author": {
+    "name": "Zeug Lab",
+    "url": "https://zeuglab.com"
+  },
+  "homepage": "https://clawpanel.app",
+  "keywords": [
+    "workspace",
+    "knowledge",
+    "project-management"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "ClawPanel",
+        "shortDescription": "Find workplace knowledge",
+        "longDescription": "Connect to your ClawPanel workspace, search its knowledge base, and open matching sources. Start from a question about a project or a past decision.",
+        "developerName": "Zeug Lab",
+        "category": "Productivity",
+        "capabilities": [
+          "Search workplace knowledge",
+          "Read linked sources"
+        ],
+        "websiteURL": "https://clawpanel.app",
+        "supportURL": "https://clawpanel.app/workflow-guides/setup.md",
+        "privacyPolicyURL": "https://clawpanel.app/privacy",
+        "termsOfServiceURL": "https://clawpanel.app/terms",
+        "defaultPrompt": [
+          "Find the kickoff notes for my project.",
+          "Summarize the last decision and link to the source."
+        ],
+        "composerIcon": "./assets/clawpanel.png",
+        "logo": "./assets/clawpanel.png"
+      }
+    }
+  }
+}

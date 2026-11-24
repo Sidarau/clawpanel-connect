@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "clawpanel": {
+      "type": "http",
+      "url": "https://clawpanel-mcp.fly.dev/mcp"
+    }
+  }
+}
