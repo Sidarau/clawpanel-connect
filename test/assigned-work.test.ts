@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
-import { runCodexConnect, runConnect } from "../src/connect.js";
+import { runConnect, runTomlConnect } from "../src/connect.js";
 import { assignedWorkComment, createAssignedWorkClient, createAssignedWorkServer } from "../src/mcp/assigned-work.js";
 
 const agentId = "550e8400-e29b-41d4-a716-446655440001";
@@ -95,11 +95,11 @@ esac
       args: ["/fixture/cli.js", "serve", "--assigned-work"],
       env: { CLAWPANEL_AGENT_WORK_CONFIG: "${CLAWPANEL_AGENT_WORK_CONFIG}", PAPERCLIP_RUN_ID: "${PAPERCLIP_RUN_ID}" },
     });
-    const codex = (await runCodexConnect(options)).content;
+    const codex = (await runTomlConnect(options, "codex")).content;
     expect(codex).toContain('args = ["/fixture/cli.js", "serve", "--assigned-work"]');
     expect(codex).toMatch(/env_vars = \[.*"PAPERCLIP_RUN_ID"/);
     expect(codex).not.toContain("/project");
     await expect(runConnect({ ...options, hosted: true })).rejects.toThrow("either --hosted or --assigned-work");
-    await expect(runCodexConnect({ ...options, hosted: true })).rejects.toThrow("either --hosted or --assigned-work");
+    await expect(runTomlConnect({ ...options, hosted: true }, "codex")).rejects.toThrow("either --hosted or --assigned-work");
   });
 });

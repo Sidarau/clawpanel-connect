@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, writeFile, stat, symlink } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runCodexConnect, runConnect } from "../src/connect.js";
+import { runConnect, runTomlConnect } from "../src/connect.js";
+import { WORK_RUN_ENV } from "../src/config.js";
 import { parseArgs } from "../src/cli.js";
 
 let dir: string;
@@ -65,7 +66,7 @@ describe("Codex project config", () => {
   const local = { hosted: false, print: false, localEntry };
 
   it("uses the installed CLI and the selected folder", async () => {
-    const result = await runCodexConnect({ ...local, workspaceDir: dir });
+    const result = await runTomlConnect({ ...local, workspaceDir: dir }, "codex");
     expect(result.writtenTo).toBe(join(dir, ".codex", "config.toml"));
     expect(result.content).toBe([
       "[mcp_servers.clawpanel]",
@@ -78,7 +79,7 @@ describe("Codex project config", () => {
   });
 
   it("declares hosted credential references without writing values", async () => {
-    const result = await runCodexConnect({ workspaceDir: dir, hosted: true, print: true });
+    const result = await runTomlConnect({ workspaceDir: dir, hosted: true, print: true }, "codex");
     expect(result.content).toBe([
       "[mcp_servers.clawpanel]",
       'url = "https://clawpanel.app/api/mcp"',
@@ -88,22 +89,43 @@ describe("Codex project config", () => {
     ].join("\n"));
     expect(result.writtenTo).toBeUndefined();
     await expect(stat(join(dir, ".codex"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(runCodexConnect({
+    await expect(runTomlConnect({
       workspaceDir: dir, hosted: true, print: false, token: "fixture-token", runtimeKey: "fixture-key",
-    })).rejects.toThrow(/Omit credential flags/);
-    await expect(runCodexConnect({
+    }, "codex")).rejects.toThrow(/Omit credential flags/);
+    await expect(runTomlConnect({
       workspaceDir: dir, hosted: true, print: true, apiUrl: "https://clawpanel.app/other/path",
-    })).rejects.toThrow(/HTTPS origin/);
+    }, "codex")).rejects.toThrow(/HTTPS origin/);
   });
 
   it("preserves existing config and refuses a symlinked .codex directory", async () => {
     const outputFile = join(dir, "existing.toml");
     await writeFile(outputFile, "[mcp_servers.other]\n");
-    await expect(runCodexConnect({ ...local, workspaceDir: dir, outputFile })).rejects.toThrow(/already exists/);
+    await expect(runTomlConnect({ ...local, workspaceDir: dir, outputFile }, "codex")).rejects.toThrow(/already exists/);
     expect(await readFile(outputFile, "utf8")).toBe("[mcp_servers.other]\n");
     await symlink(dir, join(dir, ".codex"), "dir");
-    await expect(runCodexConnect({ ...local, workspaceDir: dir })).rejects.toThrow(/must be a directory/);
+    await expect(runTomlConnect({ ...local, workspaceDir: dir }, "codex")).rejects.toThrow(/must be a directory/);
     await expect(stat(join(dir, "config.toml"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("Grok Build project config", () => {
+  it("connects the installed CLI to assigned Work using run environment references", async () => {
+    const opts = { workspaceDir: dir, hosted: false, assignedWork: true, print: false,
+      localEntry: { node: "/opt/ClawPanel Tools/node", cli: "/opt/ClawPanel Tools/cli.js" } };
+    const result = await runTomlConnect(opts, "grok");
+    expect(result.writtenTo).toBe(join(dir, ".grok", "config.toml"));
+    expect(result.content).toContain('"serve", "--assigned-work"');
+    for (const name of WORK_RUN_ENV) expect(result.content).toContain(name + ' = "${' + name + '}"');
+    expect(await readFile(result.writtenTo!, "utf8")).toBe(result.content);
+    await expect(runTomlConnect(opts, "grok")).rejects.toThrow(/already exists/);
+  });
+
+  it("references hosted authorization headers without writing credential values", async () => {
+    const opts = { workspaceDir: dir, hosted: true, print: true };
+    const result = await runTomlConnect(opts, "grok");
+    expect(result.content).toContain('Authorization = "Bearer ${CLAWPANEL_TOKEN}"');
+    expect(result.content).toContain('"x-runtime-key" = "${CLAWPANEL_RUNTIME_KEY}"');
+    await expect(runTomlConnect({ ...opts, token: "fixture-token" }, "grok")).rejects.toThrow(/Omit credential flags/);
   });
 });
 

@@ -14,7 +14,7 @@ import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
-import { runCodexConnect, runConnect } from "./connect.js";
+import { runConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
@@ -42,7 +42,7 @@ USAGE
   clawpanel --help                   Print this help
 
 CONNECT OPTIONS
-  --client <client>    claude (.mcp.json, default) or codex (.codex/config.toml)
+  --client <client>    claude (.mcp.json, default), codex (.codex/config.toml), or grok (.grok/config.toml)
   --assigned-work      Use the enrolled run's assigned Work issue and comments
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
@@ -204,7 +204,9 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "connect": {
       const client = flags.client ?? "claude";
-      if (client !== "claude" && client !== "codex") throw new Error("Choose --client claude or --client codex.");
+      if (client !== "claude" && client !== "codex" && client !== "grok") {
+        throw new Error("Choose --client claude, --client codex, or --client grok.");
+      }
       const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
@@ -216,10 +218,11 @@ async function main(argv: string[]): Promise<number> {
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
       };
-      if (client === "codex") {
-        const result = await runCodexConnect(options);
+      if (client !== "claude") {
+        const result = await runTomlConnect(options, client);
+        const clientName = client === "codex" ? "Codex" : "Grok Build";
         process.stdout.write(result.writtenTo
-          ? `Wrote Codex MCP config to ${result.writtenTo}\n`
+          ? `Wrote ${clientName} MCP config to ${result.writtenTo}\n`
           : result.content);
         return 0;
       }
