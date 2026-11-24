@@ -63,13 +63,15 @@ describe("assigned Work MCP", () => {
       await writeFile(file, `#!/bin/sh
 test -z "$UNRELATED_SECRET" || exit 10
 case "$1" in
-  "") printf '%s\n' '{"agent_id":"${agentId}","task":{"id":"${issueId}"}}';;
+  "") printf '%s\n' '{"agent_id":"${agentId}","run_id":"${runEnv.PAPERCLIP_RUN_ID}","task":{"id":"${issueId}"}}';;
   --comment-stdin)
     IFS= read -r supplied || test -n "$supplied" || exit 11
     case "$supplied" in
-      *wrong*) printf '%s\n' '{"agent_id":"${agentId}","message":{"kind":"user"}}';;
+      *wrong*) printf '%s\n' '{"agent_id":"${agentId}","run_id":"${runEnv.PAPERCLIP_RUN_ID}","message":{"kind":"user"}}';;
+      *stale*) printf '%s\n' '{"agent_id":"${agentId}","run_id":"${issueId}","message":{"kind":"agent","fromAgentId":"${agentId}"}}';;
+      *unattested*) printf '%s\n' '{"agent_id":"${agentId}","message":{"kind":"agent","fromAgentId":"${agentId}"}}';;
       *revoked*) printf '%s\n' 'Local Work returned HTTP 403.' >&2; exit 1;;
-      *${requestId}*) printf '%s\n' '{"agent_id":"${agentId}","message":{"kind":"agent","fromAgentId":"${agentId}"}}';;
+      *${requestId}*) printf '%s\n' '{"agent_id":"${agentId}","run_id":"${runEnv.PAPERCLIP_RUN_ID}","message":{"kind":"agent","fromAgentId":"${agentId}"}}';;
       *) exit 12;;
     esac;;
   *) exit 13;;
@@ -80,6 +82,8 @@ esac
       await expect(helper()).resolves.toMatchObject({ task: { id: issueId } });
       await expect(helper({ text: "checked", clientRequestId: requestId })).resolves.toMatchObject({ message: { fromAgentId: agentId } });
       await expect(helper({ text: "wrong", clientRequestId: requestId })).rejects.toThrow("did not confirm");
+      await expect(helper({ text: "stale", clientRequestId: requestId })).rejects.toThrow("did not confirm");
+      await expect(helper({ text: "unattested", clientRequestId: requestId })).rejects.toThrow("did not confirm");
       await expect(helper({ text: "revoked", clientRequestId: requestId })).rejects.toThrow("HTTP 403");
     } finally {
       await rm(dir, { recursive: true, force: true });

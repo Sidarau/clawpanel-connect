@@ -45,7 +45,8 @@ export function createAssignedWorkClient(
       }
       try {
         const result: unknown = JSON.parse(stdout);
-        if (!isRecord(result) || result.agent_id !== runEnv.PAPERCLIP_AGENT_ID) throw new Error(unconfirmed);
+        if (!isRecord(result) || result.agent_id !== runEnv.PAPERCLIP_AGENT_ID
+          || result.run_id !== runEnv.PAPERCLIP_RUN_ID) throw new Error(unconfirmed);
         if (!comment && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new Error(unconfirmed);
         if (comment && (!isRecord(result.message) || result.message.kind !== "agent"
           || result.message.fromAgentId !== runEnv.PAPERCLIP_AGENT_ID || result.message.fromUserId != null)) throw new Error(unconfirmed);
