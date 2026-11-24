@@ -9,7 +9,7 @@ class ResultConflict extends RuntimeError {}
 type Config = { version: 1; origin: string; device_code: string; runtime_id: string; agent_id: string; expires_at: string };
 type Entry = { state: 'started' | 'ready'; job: string; acknowledged?: boolean; lease: string; reply?: string; error?: string };
 type Journal = Record<string, Entry>;
-export type Dependencies = { fetch?: typeof fetch; signal?: AbortSignal; sleep?: (ms: number) => Promise<void>; log?: (text: string) => void; directory?: string };
+export type Dependencies = { fetch?: typeof fetch; signal?: AbortSignal; sleep?: (ms: number) => Promise<void>; log?: (text: string) => void; openBrowser?: (url: string) => Promise<void>; directory?: string };
 function fail(message: string): never { throw new RuntimeError(message); }
 const identifier = (v: unknown): v is string => typeof v === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(v);
 function record(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) return fail('Invalid response'); return v as Record<string, unknown>; }
@@ -113,7 +113,11 @@ export async function pair(options: { name: string; apiUrl: string; reconnect?: 
     const u = new URL(text(p.verification_url, 2048));
     if (u.origin !== api || u.pathname !== '/dashboard/runtime' || u.searchParams.size !== 1 || u.searchParams.get('code') !== code || u.username || u.password || u.hash || u.href.includes(p.device_code) || /[\x00-\x1f\x7f]/.test(String(p.verification_url))) fail('Unsafe approval URL');
     const deadline = Date.parse(text(p.expires_at, 64)); if (!Number.isFinite(deadline) || deadline <= Date.now() || deadline > Date.now() + 610_000) fail('Invalid pairing expiry');
-    c.log(`Open ${u.href}\nApproval code: ${code}`);
+    c.log(`Authorize this computer at ${u.href}\nApproval code: ${code}`);
+    if (d.openBrowser) {
+      try { await d.openBrowser(u.href); }
+      catch { c.log('Could not open a browser. Open the link above in any browser to continue.'); }
+    }
     while (Date.now() < deadline) {
       await c.sleep(3000);
       const status = await c.request(api + '/api/runtime/pairings/status', { device_code: p.device_code });

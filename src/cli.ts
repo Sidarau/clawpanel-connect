@@ -8,6 +8,8 @@
  *   npx clawpanel@latest --version | --help
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { pair, run, RuntimeError } from "./runtime/client.js";
 import { readTaskUpdate, runTask } from "./task.js";
 import { runConnect } from "./connect.js";
@@ -18,8 +20,8 @@ const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, 
 
 USAGE
   clawpanel connect [options]        Write MCP client config (.mcp.json)
-  clawpanel runtime pair --name NAME [--api-url ORIGIN]
-  clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
+  clawpanel runtime pair --name NAME [--api-url ORIGIN] [--no-browser]
+  clawpanel runtime reconnect --name NAME [--api-url ORIGIN] [--no-browser]
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
@@ -101,6 +103,11 @@ export function boolFlag(flags: Record<string, string | boolean>, name: string):
   return flags[name] === true;
 }
 
+async function openPairingBrowser(url: string) {
+  const command = process.platform === "darwin" ? "/usr/bin/open" : "xdg-open";
+  await promisify(execFile)(command, [url], { timeout: 5_000 });
+}
+
 async function main(argv: string[]): Promise<number> {
   if (argv[0] === "task" && argv[1] !== "--help" && argv[1] !== "-h") {
     const action = argv[1];
@@ -126,14 +133,14 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === "runtime") {
     const action = argv[1];
     const { flags } = parseArgs(argv.slice(2));
-    const allowed = action === "run" ? ["endpoint", "model"] : ["name", "api-url"];
-    if (!['pair', 'reconnect', 'run'].includes(action ?? '') || Object.keys(flags).some(k => !allowed.includes(k))) throw new RuntimeError('Use runtime pair/reconnect --name NAME [--api-url ORIGIN], or runtime run --endpoint URL --model MODEL. Runtime API keys use CLAWPANEL_LOCAL_RUNTIME_API_KEY environment only.');
+    const allowed = action === "run" ? ["endpoint", "model"] : ["name", "api-url", "no-browser"];
+    if (!['pair', 'reconnect', 'run'].includes(action ?? '') || Object.keys(flags).some(k => !allowed.includes(k)) || (flags["no-browser"] !== undefined && !boolFlag(flags, "no-browser"))) throw new RuntimeError('Use runtime pair/reconnect --name NAME [--api-url ORIGIN] [--no-browser], or runtime run --endpoint URL --model MODEL. Runtime API keys use CLAWPANEL_LOCAL_RUNTIME_API_KEY environment only.');
     const controller = new AbortController();
     const stop = () => controller.abort();
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
     try {
       if (action === 'run') await run({ endpoint: stringFlag(flags, 'endpoint') ?? '', model: stringFlag(flags, 'model') ?? '', runtimeApiKey: process.env.CLAWPANEL_LOCAL_RUNTIME_API_KEY }, { signal: controller.signal });
-      else await pair({ name: stringFlag(flags, 'name') ?? '', apiUrl: stringFlag(flags, 'api-url') ?? 'https://clawpanel.app', reconnect: action === 'reconnect' }, { signal: controller.signal });
+      else await pair({ name: stringFlag(flags, 'name') ?? '', apiUrl: stringFlag(flags, 'api-url') ?? 'https://clawpanel.app', reconnect: action === 'reconnect' }, { signal: controller.signal, openBrowser: boolFlag(flags, 'no-browser') ? undefined : openPairingBrowser });
     } catch (e) { if (!controller.signal.aborted) throw e; }
     finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
     return 0;

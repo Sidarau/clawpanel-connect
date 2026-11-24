@@ -18,10 +18,11 @@ function journalName() { return 'journal-' + createHash('sha256').update('runtim
 function jobHash() { return createHash('sha256').update(job.id).digest('hex'); }
 describe('runtime pairing', () => {
   it('writes only after browser approval, private scope and no secrets in output', async () => {
-    const directory = dir(); const logs: string[] = []; let n = 0;
-    await pair({ name: 'Omarchy', apiUrl: 'https://clawpanel.test' }, { directory, log: s => logs.push(s), sleep: async () => {}, fetch: fake((u, init) => {
+    const directory = dir(); const logs: string[] = []; const opened: string[] = []; let n = 0;
+    await pair({ name: 'Omarchy', apiUrl: 'https://clawpanel.test' }, { directory, log: s => logs.push(s), openBrowser: async url => { opened.push(url); }, sleep: async () => {}, fetch: fake((u, init) => {
       expect(init.redirect).toBe('error'); expect((init.headers as any).authorization).toBeUndefined();
       if (u.endsWith('/pairings')) return pairing();
+      expect(opened).toEqual([pairing().verification_url]);
       expect(new Store(directory).read('runtime.json')).toBeUndefined();
       return ++n === 1 ? { status: 'pending' } : { status: 'approved', ...cfg() };
     }) });
@@ -42,9 +43,21 @@ describe('runtime pairing', () => {
     expect(s.read('runtime.json')).toMatchObject({ runtime_id: 'new-runtime' });
   });
   it('rejects malicious approval origin before printing it or sending secret there', async () => {
-    const directory = dir(); let calls = 0; const logs: string[] = [];
-    await expect(pair({ name: 'x', apiUrl: 'https://clawpanel.test' }, { directory, log: s => logs.push(s), fetch: fake(() => { calls++; return { ...pairing(), verification_url: 'https://evil.test/' }; }) })).rejects.toThrow('Unsafe approval URL');
+    const directory = dir(); let calls = 0; const logs: string[] = []; const opened: string[] = [];
+    await expect(pair({ name: 'x', apiUrl: 'https://clawpanel.test' }, { directory, log: s => logs.push(s), openBrowser: async url => { opened.push(url); }, fetch: fake(() => { calls++; return { ...pairing(), verification_url: 'https://evil.test/' }; }) })).rejects.toThrow('Unsafe approval URL');
     expect(calls).toBe(1); expect(logs.join('')).not.toContain('evil.test');
+    expect(opened).toEqual([]);
+  });
+  it('continues polling when no browser can open the validated link', async () => {
+    const directory = dir(); const logs: string[] = [];
+    await pair({ name: 'headless', apiUrl: 'https://clawpanel.test' }, {
+      directory, log: message => logs.push(message), sleep: async () => {},
+      openBrowser: async () => { throw new Error('no browser'); },
+      fetch: fake(url => url.endsWith('/pairings') ? pairing() : { ...cfg(), status: 'approved' }),
+    });
+    expect(logs.join('\n')).toContain(pairing().verification_url);
+    expect(logs.join('\n')).toContain('Could not open a browser');
+    expect(new Store(directory).read('runtime.json')).toMatchObject({ runtime_id: 'runtime-1' });
   });
 });
 describe('foreground runtime', () => {
