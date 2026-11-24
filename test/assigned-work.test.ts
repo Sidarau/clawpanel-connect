@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 import { runCodexConnect, runConnect } from "../src/connect.js";
-import { createAssignedWorkClient, createAssignedWorkServer } from "../src/mcp/assigned-work.js";
+import { assignedWorkComment, createAssignedWorkClient, createAssignedWorkServer } from "../src/mcp/assigned-work.js";
 
 const agentId = "550e8400-e29b-41d4-a716-446655440001";
 const issueId = "550e8400-e29b-41d4-a716-446655440002";
@@ -41,6 +41,14 @@ describe("assigned Work MCP", () => {
       await client.close();
       await server.close();
     }
+  });
+
+  it("validates the same attributed comment for CLI and MCP callers", () => {
+    const note = { text: "Work receipt", clientRequestId: requestId };
+    expect(assignedWorkComment(note)).toEqual(note);
+    expect(() => assignedWorkComment({ ...note, issueId })).toThrow("request UUID");
+    expect(() => assignedWorkComment({ ...note, text: " ".repeat(10) })).toThrow("request UUID");
+    expect(() => assignedWorkComment({ ...note, clientRequestId: "unbound" })).toThrow("request UUID");
   });
 
   it("requires the managed run identity before launching a helper", () => {

@@ -59,6 +59,16 @@ export function createAssignedWorkClient(
   });
 }
 
+export function assignedWorkComment(value: unknown): Comment {
+  if (!isRecord(value)) throw new Error("Supply comment text and a request UUID.");
+  const { text, clientRequestId } = value;
+  if (Object.keys(value).length !== 2 || typeof text !== "string" || !text.trim() || text.length > maxCommentLength
+    || typeof clientRequestId !== "string" || !uuid.test(clientRequestId)) {
+    throw new Error("Supply comment text and a request UUID.");
+  }
+  return { text, clientRequestId };
+}
+
 function failure(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
@@ -95,12 +105,11 @@ export function createAssignedWorkServer(client: WorkClient): Server {
     if (params.name === readTool) {
       if (Object.keys(args).length) return failure("The issue is selected by the active Work run.");
     } else if (params.name === commentTool) {
-      const { text, clientRequestId } = args;
-      if (Object.keys(args).length !== 2 || typeof text !== "string" || !text.trim() || text.length > maxCommentLength
-        || typeof clientRequestId !== "string" || !uuid.test(clientRequestId)) {
-        return failure("Supply comment text and a request UUID.");
+      try {
+        comment = assignedWorkComment(args);
+      } catch (error) {
+        return failure((error as Error).message);
       }
-      comment = { text, clientRequestId };
     } else {
       return failure("Unknown assigned Work tool.");
     }

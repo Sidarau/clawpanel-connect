@@ -163,6 +163,10 @@ terminals, and CI output. Local mode does not require or include hosted credenti
       Codex verified; more TBD)
 - [ ] HTTP transport for the local server (LAN/remote access)
 
+## Assigned Work on the command line
+
+An enrolled runner can use `clawpanel work read` or `clawpanel work comment < comment.json` without a native MCP client. The launcher supplies the active run, agent, company, and issue. Read returns the current assigned issue and its authorized context. Comment accepts `text` and `clientRequestId` (UUID) and returns the attributed receipt. Reuse the UUID to retry the same comment.
+
 ## Development
 
 ```bash

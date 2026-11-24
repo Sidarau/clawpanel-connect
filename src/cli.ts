@@ -10,13 +10,13 @@
 
 import { fileURLToPath } from "node:url";
 import { pair, run, RuntimeError } from "./runtime/client.js";
-import { readTaskUpdate, runTask } from "./task.js";
+import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
 import { runCodexConnect, runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
-import { runAssignedWorkServer } from "./mcp/assigned-work.js";
+import { assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -30,6 +30,8 @@ USAGE
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
+  clawpanel work read
+  clawpanel work comment < comment.json
   clawpanel marketplace buy|sell [--json]
   clawpanel partner dashboard [--json]
   clawpanel partner share --code CODE [--json]
@@ -57,6 +59,10 @@ TASK CONNECTION
   Read task context before drafting an update. Update JSON on stdin requires
   task_id, task_version, settings_version, sop_revision, request_id (UUID),
   and summary. Responses are JSON on stdout.
+
+ASSIGNED WORK
+  Read the active run's assigned issue as JSON. A comment takes JSON with
+  text and clientRequestId (UUID). Reuse that UUID when retrying the same comment.
 
 SERVE OPTIONS
   --assigned-work      Start the MCP server for the enrolled Work run
@@ -136,6 +142,20 @@ async function main(argv: string[]): Promise<number> {
       }) : undefined,
     });
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+  if (argv[0] === "work" && argv[1] !== "--help" && argv[1] !== "-h") {
+    const action = argv[1];
+    if (argv.length !== 2 || (action !== "read" && action !== "comment")) {
+      throw new Error("Use clawpanel work read or clawpanel work comment with JSON on stdin.");
+    }
+    const client = createAssignedWorkClient(process.env);
+    const comment = action === "comment" ? assignedWorkComment(await readJsonObject(process.stdin, "The Work comment", 256)
+      .catch((error: unknown) => {
+        if (error instanceof SyntaxError) throw new Error("Send valid Work comment JSON on stdin.");
+        throw error;
+      })) : undefined;
+    process.stdout.write(JSON.stringify(await client(comment), null, 2) + "\n");
     return 0;
   }
   if (argv[0] === "login") {

@@ -49,7 +49,7 @@ try {
   writeFileSync(join(stage, "package", "THIRD-PARTY-NOTICES.txt"), notices.join("\n\n---\n\n") + "\n");
   const cli = join(stage, "package", "dist", "cli.js");
   const help = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
-  for (const command of ["connect", "login", "skills list|sync|run", "task context", "task update", "serve"]) {
+  for (const command of ["connect", "login", "skills list|sync|run", "task context", "task update", "work read", "work comment", "serve"]) {
     if (!help.includes(`  clawpanel ${command}`)) throw new Error(`Bundled CLI is missing ${command}`);
   }
   execFileSync(process.execPath, [cli, "skills", "sync"], { cwd: stage });
