@@ -41,16 +41,20 @@ export async function runTask(
   return output;
 }
 
-export async function readTaskUpdate(input: AsyncIterable<Buffer | string>): Promise<unknown> {
+export function readTaskUpdate(input: AsyncIterable<Buffer | string>): Promise<unknown> {
+  return readJsonObject(input, "The task update", 32);
+}
+
+export async function readJsonObject(input: AsyncIterable<Buffer | string>, label: string, limitKB: number): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of input) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += bytes.byteLength;
-    if (size > 32_768) throw new Error("The task update exceeds the 32 KB input limit.");
+    if (size > limitKB * 1024) throw new Error(`${label} exceeds the ${limitKB} KB input limit.`);
     chunks.push(bytes);
   }
   const value: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The task update must be a JSON object.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be a JSON object.`);
   return value;
 }

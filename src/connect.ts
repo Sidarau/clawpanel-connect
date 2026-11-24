@@ -18,12 +18,14 @@ import {
   buildHostedConfig,
   buildLocalConfig,
   hostedMcpUrl,
+  WORK_RUN_ENV,
   type ClientConfig,
 } from "./config.js";
 
 export interface ConnectOptions {
   workspaceDir: string;
   hosted: boolean;
+  assignedWork?: boolean;
   localEntry?: { node: string; cli: string };
   token?: string;
   runtimeKey?: string;
@@ -42,6 +44,7 @@ export interface ConnectResult {
 export const DEFAULT_MCP_CONFIG_FILE = ".mcp.json";
 
 export function buildConnectConfig(opts: ConnectOptions): ClientConfig {
+  checkConnectionMode(opts);
   if (opts.hosted) {
     const token = opts.token ?? process.env.CLAWPANEL_TOKEN;
     if (!token?.trim()) {
@@ -53,7 +56,7 @@ export function buildConnectConfig(opts: ConnectOptions): ClientConfig {
     }
     return buildHostedConfig(opts.apiUrl ?? API_URL_DEFAULT, token, runtimeKey);
   }
-  return buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry);
+  return buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry, opts.assignedWork);
 }
 
 export async function runConnect(opts: ConnectOptions): Promise<ConnectResult> {
@@ -66,41 +69,52 @@ export async function runConnect(opts: ConnectOptions): Promise<ConnectResult> {
   return { config, writtenTo: outputFile };
 }
 
-export async function runCodexConnect(opts: ConnectOptions): Promise<{ content: string; writtenTo?: string }> {
+export async function runTomlConnect(opts: ConnectOptions, client: "codex" | "grok"): Promise<{ content: string; writtenTo?: string }> {
+  checkConnectionMode(opts);
   const workspace = resolve(opts.workspaceDir);
+  const clientName = client === "codex" ? "Codex" : "Grok Build";
   const lines = ["[mcp_servers.clawpanel]"];
   if (opts.hosted) {
     if (opts.token !== undefined || opts.runtimeKey !== undefined) {
-      throw new Error("Codex reads CLAWPANEL_TOKEN and CLAWPANEL_RUNTIME_KEY from its environment. Omit credential flags.");
+      throw new Error(clientName + " reads CLAWPANEL_TOKEN and CLAWPANEL_RUNTIME_KEY from its environment. Omit credential flags.");
     }
-    lines.push(
-      `url = ${tomlString(hostedMcpUrl(opts.apiUrl ?? API_URL_DEFAULT))}`,
-      'bearer_token_env_var = "CLAWPANEL_TOKEN"',
-      'env_http_headers = { "x-runtime-key" = "CLAWPANEL_RUNTIME_KEY" }',
-    );
+    lines.push(`url = ${tomlString(hostedMcpUrl(opts.apiUrl ?? API_URL_DEFAULT))}`);
+    if (client === "codex") {
+      lines.push('bearer_token_env_var = "CLAWPANEL_TOKEN"',
+        'env_http_headers = { "x-runtime-key" = "CLAWPANEL_RUNTIME_KEY" }');
+    } else {
+      lines.push('headers = { Authorization = "Bearer ${CLAWPANEL_TOKEN}", "x-runtime-key" = "${CLAWPANEL_RUNTIME_KEY}" }');
+    }
   } else {
     if (!opts.localEntry) throw new Error("Start Connect from the installed ClawPanel CLI.");
-    const { node, cli } = opts.localEntry;
+    const config = buildLocalConfig(workspace, opts.localEntry, opts.assignedWork);
+    const { command, args, env } = config.mcpServers.clawpanel;
     lines.push(
-      `command = ${tomlString(node)}`,
-      `args = [${tomlString(cli)}, "serve"]`,
-      `env = { CLAWPANEL_WORKSPACE = ${tomlString(workspace)} }`,
+      `command = ${tomlString(command)}`,
+      `args = [${args.map(tomlString).join(", ")}]`,
+      opts.assignedWork && client === "codex"
+        ? `env_vars = [${WORK_RUN_ENV.map(tomlString).join(", ")}]`
+        : `env = { ${Object.entries(env ?? {}).map(([key, value]) => `${key} = ${tomlString(value)}`).join(", ")} }`,
     );
   }
   const content = lines.join("\n") + "\n";
   if (opts.print) return { content };
-  const codexDir = join(workspace, ".codex");
-  const outputFile = opts.outputFile ?? join(codexDir, "config.toml");
+  const configDir = join(workspace, "." + client);
+  const outputFile = opts.outputFile ?? join(configDir, "config.toml");
   if (opts.outputFile === undefined) {
     try {
-      await mkdir(codexDir, { mode: 0o700 });
+      await mkdir(configDir, { mode: 0o700 });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      if (!(await lstat(codexDir)).isDirectory()) throw new Error("The project's .codex path must be a directory.");
+      if (!(await lstat(configDir)).isDirectory()) throw new Error(`The project's .${client} path must be a directory.`);
     }
   }
   await writeNewConfig(outputFile, content);
   return { content, writtenTo: outputFile };
+}
+
+function checkConnectionMode(opts: ConnectOptions): void {
+  if (opts.hosted && opts.assignedWork) throw new Error("Choose either --hosted or --assigned-work.");
 }
 
 function tomlString(value: string): string {

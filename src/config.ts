@@ -6,6 +6,13 @@
 
 export const API_URL_DEFAULT = "https://clawpanel.app";
 export const MCP_PATH = "/api/mcp";
+export const WORK_RUN_ENV = [
+  "CLAWPANEL_AGENT_WORK_CONFIG",
+  "PAPERCLIP_AGENT_ID",
+  "PAPERCLIP_COMPANY_ID",
+  "PAPERCLIP_TASK_ID",
+  "PAPERCLIP_RUN_ID",
+] as const;
 
 /**
  * Free-tier limits of the open surface. The hosted server-side brain
@@ -42,15 +49,20 @@ export interface ClientConfig {
  * Free, local, account-less config: point the agent at the open-source
  * MCP server using the current installed entry point. No token required.
  */
-export function buildLocalConfig(workspaceDir: string, local?: { node: string; cli: string }): ClientConfig {
+export function buildLocalConfig(
+  workspaceDir: string,
+  local?: { node: string; cli: string },
+  assignedWork = false,
+): { mcpServers: { clawpanel: StdioMcpServerEntry } } {
+  if (assignedWork && !local) throw new Error("Start Connect from the installed ClawPanel CLI.");
   return {
     mcpServers: {
       clawpanel: {
         command: local?.node ?? "npx",
-        args: local ? [local.cli, "serve"] : ["-y", "clawpanel@latest", "serve"],
-        env: {
-          CLAWPANEL_WORKSPACE: workspaceDir,
-        },
+        args: local ? [local.cli, "serve", ...(assignedWork ? ["--assigned-work"] : [])] : ["-y", "clawpanel@latest", "serve"],
+        env: assignedWork
+          ? Object.fromEntries(WORK_RUN_ENV.map((name) => [name, "${" + name + "}"]))
+          : { CLAWPANEL_WORKSPACE: workspaceDir },
       },
     },
   };

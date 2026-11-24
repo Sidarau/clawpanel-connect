@@ -54,11 +54,13 @@ Run one of these commands from the project you want your agent to use:
 ```sh
 clawpanel connect --client claude
 clawpanel connect --client codex
+clawpanel connect --client grok
 ```
 
-Claude Code reads the generated `.mcp.json`. Codex reads
-`.codex/config.toml` when it trusts the project. Both use the installed
-ClawPanel CLI and preserve existing configuration files. If a file
+Claude Code reads the generated `.mcp.json`. Codex and Grok Build read
+`.codex/config.toml` and `.grok/config.toml` after you trust the project
+in the respective client. All three use the installed ClawPanel CLI
+and preserve existing configuration files. If a file
 already exists, use `--print` to see the entry to add.
 
 For MCP clients that read `.mcp.json`, the local config is:
@@ -90,9 +92,10 @@ Writes the HTTP config for the hosted brain at
 `<api-url>/api/mcp`. Tokens are issued from your ClawPanel account (the
 web app's Connect flow).
 
-For Codex, run `clawpanel connect --client codex --hosted`. Set
+For Codex or Grok Build, run `clawpanel connect --client codex --hosted`
+or `clawpanel connect --client grok --hosted`. Set
 `CLAWPANEL_TOKEN` and `CLAWPANEL_RUNTIME_KEY` in the private environment that
-launches Codex. The generated TOML stores the variable names.
+launches the chosen client. The generated TOML stores references to those variables.
 
 ### Other flags
 
@@ -102,13 +105,27 @@ launches Codex. The generated TOML stores the variable names.
 --workspace <dir> workspace directory (default: cwd)
 ```
 
+### Assigned Work runs
+
+On a managed machine with the per-agent Work client installed, a launcher can generate the MCP config for the selected harness.
+
+```sh
+clawpanel connect --client codex --assigned-work
+clawpanel connect --client claude --assigned-work
+clawpanel connect --client grok --assigned-work
+```
+
+The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
+
+`--client grok` configures Grok Build on the machine running the Work client.
+
 ## CLI reference
 
 ```text
-clawpanel connect [--client claude|codex] [--hosted] [--api-url <u>]
+clawpanel connect [--client claude|codex|grok] [--hosted|--assigned-work] [--api-url <u>]
                   [--token <t>] [--runtime-key <key>]
                   [--output <f>] [--print] [--workspace <dir>]
-clawpanel serve [--workspace <dir>]
+clawpanel serve [--workspace <dir>|--assigned-work]
 clawpanel --version | --help
 ```
 
@@ -151,6 +168,10 @@ terminals, and CI output. Local mode does not require or include hosted credenti
 - [ ] MCP config auto-detection for more clients (Claude Code, Cursor,
       Codex verified; more TBD)
 - [ ] HTTP transport for the local server (LAN/remote access)
+
+## Assigned Work on the command line
+
+An enrolled runner can use `clawpanel work read` or `clawpanel work comment < comment.json` without a native MCP client. The launcher supplies the active run, agent, company, and issue. Read returns the current assigned issue and its authorized context. Comment accepts `text` and `clientRequestId` (UUID) and returns the attributed receipt. Reuse the UUID to retry the same comment.
 
 ## Development
 

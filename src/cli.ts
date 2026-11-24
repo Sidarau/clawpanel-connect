@@ -10,12 +10,13 @@
 
 import { fileURLToPath } from "node:url";
 import { pair, run, RuntimeError } from "./runtime/client.js";
-import { readTaskUpdate, runTask } from "./task.js";
+import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
-import { runCodexConnect, runConnect } from "./connect.js";
+import { runConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
+import { assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -29,6 +30,8 @@ USAGE
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
+  clawpanel work read
+  clawpanel work comment < comment.json
   clawpanel marketplace buy|sell [--json]
   clawpanel partner dashboard [--json]
   clawpanel partner share --code CODE [--json]
@@ -39,7 +42,8 @@ USAGE
   clawpanel --help                   Print this help
 
 CONNECT OPTIONS
-  --client <client>    claude (.mcp.json, default) or codex (.codex/config.toml)
+  --client <client>    claude (.mcp.json, default), codex (.codex/config.toml), or grok (.grok/config.toml)
+  --assigned-work      Use the enrolled run's assigned Work issue and comments
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
   --token <token>      Bearer token for the hosted brain (or CLAWPANEL_TOKEN env)
@@ -56,7 +60,12 @@ TASK CONNECTION
   task_id, task_version, settings_version, sop_revision, request_id (UUID),
   and summary. Responses are JSON on stdout.
 
+ASSIGNED WORK
+  Read the active run's assigned issue as JSON. A comment takes JSON with
+  text and clientRequestId (UUID). Reuse that UUID when retrying the same comment.
+
 SERVE OPTIONS
+  --assigned-work      Start the MCP server for the enrolled Work run
   --workspace <dir>    Workspace directory (default: cwd; env CLAWPANEL_WORKSPACE)
 
 FREE TIER
@@ -135,6 +144,20 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     return 0;
   }
+  if (argv[0] === "work" && argv[1] !== "--help" && argv[1] !== "-h") {
+    const action = argv[1];
+    if (argv.length !== 2 || (action !== "read" && action !== "comment")) {
+      throw new Error("Use clawpanel work read or clawpanel work comment with JSON on stdin.");
+    }
+    const client = createAssignedWorkClient(process.env);
+    const comment = action === "comment" ? assignedWorkComment(await readJsonObject(process.stdin, "The Work comment", 256)
+      .catch((error: unknown) => {
+        if (error instanceof SyntaxError) throw new Error("Send valid Work comment JSON on stdin.");
+        throw error;
+      })) : undefined;
+    process.stdout.write(JSON.stringify(await client(comment), null, 2) + "\n");
+    return 0;
+  }
   if (argv[0] === "login") {
     if (argv.length > 2 || (argv[1] && argv[1] !== "--print")) throw new Error("Use clawpanel login [--print].");
     process.stdout.write(openSignIn({ printOnly: argv[1] === "--print" }) + "\n");
@@ -181,10 +204,13 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "connect": {
       const client = flags.client ?? "claude";
-      if (client !== "claude" && client !== "codex") throw new Error("Choose --client claude or --client codex.");
+      if (client !== "claude" && client !== "codex" && client !== "grok") {
+        throw new Error("Choose --client claude, --client codex, or --client grok.");
+      }
       const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
+        assignedWork: boolFlag(flags, "assigned-work"),
         localEntry: { node: process.execPath, cli: fileURLToPath(import.meta.url) },
         token: stringFlag(flags, "token"),
         runtimeKey: stringFlag(flags, "runtime-key"),
@@ -192,10 +218,11 @@ async function main(argv: string[]): Promise<number> {
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
       };
-      if (client === "codex") {
-        const result = await runCodexConnect(options);
+      if (client !== "claude") {
+        const result = await runTomlConnect(options, client);
+        const clientName = client === "codex" ? "Codex" : "Grok Build";
         process.stdout.write(result.writtenTo
-          ? `Wrote Codex MCP config to ${result.writtenTo}\n`
+          ? `Wrote ${clientName} MCP config to ${result.writtenTo}\n`
           : result.content);
         return 0;
       }
@@ -211,6 +238,10 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
     case "serve": {
+      if (boolFlag(flags, "assigned-work")) {
+        await runAssignedWorkServer(process.env);
+        return 0;
+      }
       const workspaceDir = resolveWorkspaceDir(
         stringFlag(flags, "workspace") ?? process.env.CLAWPANEL_WORKSPACE,
       );
