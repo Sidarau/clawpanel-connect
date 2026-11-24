@@ -4,10 +4,19 @@ The open-source connect client and MCP server for
 [ClawPanel](https://clawpanel.app) — a shared intelligence workspace for
 people and AI agents.
 
+Install from the [ClawPanel landing page](https://clawpanel.app/#connect)
+or follow the source steps under Development. The npm artifact is prepared
+separately for publication.
+
 ```bash
-npx clawpanel@latest connect     # free: connect an agent to a local workspace
-npx clawpanel@latest serve       # free: run the local MCP server (stdio)
+clawpanel connect                # configure a local MCP client
+clawpanel skills sync            # add the bundled playbooks to this project
+clawpanel skills run analytics-dashboard
 ```
+
+Run the resulting playbook in your AI client with your authorized tools and
+data. For hosted access, `clawpanel login` opens the existing sign-in page;
+it does not import your browser session or create credentials.
 
 ## The open-core split
 
@@ -16,7 +25,7 @@ wedge; the server-side brain is the paid service.
 
 | Surface | Open (this repo, MIT) | Paid (clawpanel.app) |
 | --- | --- | --- |
-| Connect client | `npx clawpanel@latest connect` — one-line agent onboarding | — |
+| Connect client | `clawpanel connect` — one-line agent onboarding | — |
 | MCP server | Local stdio server: workspace notes, free-tier run counter | Hosted HTTP MCP at `https://clawpanel.app/api/mcp` |
 | Graph compiler | Roadmap (see below) | Hosted graphs |
 | Server-side brain | — | Memory distillation, governance, approvals, vault, audit, hosted graphs, marketplace |
@@ -40,20 +49,26 @@ distillation, approvals, vault, and audit.
 
 ### Free — local workspace (no account)
 
-```bash
-cd your-project
-npx clawpanel@latest connect
+Run one of these commands from the project you want your agent to use:
+
+```sh
+clawpanel connect --client claude
+clawpanel connect --client codex
 ```
 
-Writes `.mcp.json` pointing your MCP client (Claude Code, Cursor, Codex, any
-MCP client) at the local server:
+Claude Code reads the generated `.mcp.json`. Codex reads
+`.codex/config.toml` when it trusts the project. Both use the installed
+ClawPanel CLI and preserve existing configuration files. If a file
+already exists, use `--print` to see the entry to add.
+
+For MCP clients that read `.mcp.json`, the local config is:
 
 ```json
 {
   "mcpServers": {
     "clawpanel": {
-      "command": "npx",
-      "args": ["-y", "clawpanel@latest", "serve"],
+      "command": "/path/to/installed/node",
+      "args": ["/path/to/installed/dist/cli.js", "serve"],
       "env": { "CLAWPANEL_WORKSPACE": "/path/to/your-project" }
     }
   }
@@ -67,7 +82,7 @@ The server exposes workspace-scoped tools (`workspace_status`,
 ### Hosted — the paid server-side brain
 
 ```bash
-npx clawpanel@latest connect --hosted --token <your-token> --runtime-key <your-runtime-key>
+clawpanel connect --hosted --token <your-token> --runtime-key <your-runtime-key>
 # optional: --api-url https://clawpanel.app
 ```
 
@@ -75,24 +90,29 @@ Writes the HTTP config for the hosted brain at
 `<api-url>/api/mcp`. Tokens are issued from your ClawPanel account (the
 web app's Connect flow).
 
+For Codex, run `clawpanel connect --client codex --hosted`. Set
+`CLAWPANEL_TOKEN` and `CLAWPANEL_RUNTIME_KEY` in the private environment that
+launches Codex. The generated TOML stores the variable names.
+
 ### Other flags
 
 ```text
---output <file>   write config to a custom path (default ./.mcp.json)
---print           print the config JSON instead of writing a file
+--output <file>   write config to a custom path
+--print           print the config instead of writing a file
 --workspace <dir> workspace directory (default: cwd)
 ```
 
 ## CLI reference
 
 ```text
-clawpanel connect [--hosted] [--token <t>] [--runtime-key <key>] [--api-url <u>]
+clawpanel connect [--client claude|codex] [--hosted] [--api-url <u>]
+                  [--token <t>] [--runtime-key <key>]
                   [--output <f>] [--print] [--workspace <dir>]
 clawpanel serve [--workspace <dir>]
 clawpanel --version | --help
 ```
 
-`connect` without `--hosted` writes the free local config. `connect --hosted`
+`connect` without `--hosted` writes the free local config. `connect --client claude --hosted`
 requires both `--token` (or `CLAWPANEL_TOKEN`) and `--runtime-key` (or
 `CLAWPANEL_RUNTIME_KEY`). It writes `Authorization: Bearer …` and `x-runtime-key`
 headers. Missing or blank credentials fail closed. Supply the token and matching
@@ -105,10 +125,10 @@ query, or fragment. For local development, HTTP is allowed only for `localhost`,
 
 Config files are created exclusively with owner-only permissions (`0600` on POSIX).
 An existing file or symlink is never overwritten, including existing ClawPanel
-entries. If `.mcp.json` exists, use `--output` with a new filename and manually
+entries. If the project config exists, use `--output` with a new filename and manually
 merge only the `clawpanel` entry into your client's private config, preserving
 other servers. Keep credential files out of version control and restrict their
-permissions. `--print` outputs credentials in plaintext; avoid logs, shared
+permissions. `--client claude --hosted --print` outputs credentials in plaintext; avoid logs, shared
 terminals, and CI output. Local mode does not require or include hosted credentials.
 
 ## Status: initial open-source scaffold (ZEUG-546)
@@ -123,7 +143,7 @@ terminals, and CI output. Local mode does not require or include hosted credenti
 
 ### Roadmap
 
-- [x] `npx clawpanel@latest connect` (local + hosted configs)
+- [x] Website installer and `clawpanel connect` (local + hosted configs)
 - [x] Local stdio MCP server (notes + free-tier run counter)
 - [ ] **Graph compiler** — compile workspace knowledge + plans into a
       portable graph artifact (planned; not yet extracted from the web app's
@@ -147,14 +167,14 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 [MIT](./LICENSE) © 2026 Sidarau / Zeug Lab.
 
-## Outbound runtime companion (staged, not yet published)
+## Outbound runtime companion (requires an enabled server)
 
 This is separate from `connect` (MCP configuration) and the native desktop app.
 It connects an **already running, operator-managed local OpenAI-compatible bot**
 to one browser-approved ClawPanel agent. It does not install Hermes/Grok, sign in
 for you, start a shell, or install a background service. Requires Node 20.3+.
 The runtime API must be deployed before pairing can succeed. These commands
-refer to this source build, not the currently published npm package:
+use the installed standalone launcher or a source build. The runtime companion uses POSIX file permissions and is not supported on Windows:
 
 ```sh
 npm run build
@@ -221,8 +241,7 @@ MCP can use the HTTP configuration shown there and call `task_sop_context`
 followed by `task_sop_update`.
 
 For a shell-capable AI, provide that connection's credentials in its private
-environment as `CLAWPANEL_TOKEN` and `CLAWPANEL_RUNTIME_KEY`. From a built copy
-of this CLI (Node 20 or newer):
+environment as `CLAWPANEL_TOKEN` and `CLAWPANEL_RUNTIME_KEY`. Use a CLI build whose `--help` lists both task commands:
 
 ```sh
 clawpanel task context
@@ -249,3 +268,22 @@ UUID if delivery is uncertain. When the task or SOP version changes, read
 context again before updating. The update returns the app link. The workplace
 owner can pause AI updates, activate an earlier SOP revision, or revoke a
 connection from the same panel.
+
+### Workflows, credits, and partner referrals
+
+```sh
+clawpanel marketplace buy --json
+clawpanel marketplace sell --json
+clawpanel partner dashboard
+clawpanel partner share --code YOUR_32_CHARACTER_CODE
+clawpanel starter open
+clawpanel credits open
+```
+
+The local MCP server exposes the same handoffs through
+`clawpanel_marketplace_contact`, `clawpanel_partner_referral`, and
+`clawpanel_starter_open`. Ask your AI to draft an inquiry or prepare a
+referral post, then review it before sharing. The referral output includes
+commission disclosure. Partner earnings, billing, and marketplace inquiries
+use the official web destinations; these commands do not send messages,
+complete purchases, or move funds.

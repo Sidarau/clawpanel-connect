@@ -1,7 +1,7 @@
 {
   "name": "clawpanel",
-  "version": "0.1.0",
-  "description": "ClawPanel open-source connect client + MCP server. Free/open surface: npx clawpanel@latest connect, the local MCP server, and the graph compiler. Paid: the server-side brain (memory distillation, governance, approvals, vault, audit, hosted graphs, marketplace).",
+  "version": "0.1.1",
+  "description": "ClawPanel CLI and local MCP server for workspace notes, workflow playbooks, and scoped hosted task connections.",
   "keywords": [
     "clawpanel",
     "mcp",
@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "esbuild": "0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

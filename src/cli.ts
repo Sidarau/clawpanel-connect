@@ -2,39 +2,51 @@
 /**
  * clawpanel CLI — open-source connect client + MCP server (ZEUG-546).
  *
- *   npx clawpanel@latest connect            # free: local stdio MCP config
- *   npx clawpanel@latest connect --hosted --token <t> --runtime-key <key> [--api-url <u>]
- *   npx clawpanel@latest serve              # start the local stdio MCP server
- *   npx clawpanel@latest --version | --help
+ *   clawpanel connect            # free: local stdio MCP config
+ *   clawpanel connect --hosted --token <t> --runtime-key <key> [--api-url <u>]
+ *   clawpanel serve              # start the local stdio MCP server
+ *   clawpanel --version | --help
  */
 
+import { fileURLToPath } from "node:url";
 import { pair, run, RuntimeError } from "./runtime/client.js";
 import { readTaskUpdate, runTask } from "./task.js";
-import { runConnect } from "./connect.js";
+import { openSignIn } from "./login.js";
+import { skillsCommand } from "./skills.js";
+import { commerceCommand } from "./commerce.js";
+import { runCodexConnect, runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
 
 USAGE
-  clawpanel connect [options]        Write MCP client config (.mcp.json)
+  clawpanel connect [options]        Write project MCP client config
+  clawpanel login [--print]          Open ClawPanel sign-in
+  clawpanel skills list|sync|run     Install or read a local workflow playbook
   clawpanel runtime pair --name NAME [--api-url ORIGIN]
   clawpanel runtime reconnect --name NAME [--api-url ORIGIN]
   clawpanel runtime run --endpoint http://127.0.0.1:PORT/v1 --model MODEL
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
+  clawpanel marketplace buy|sell [--json]
+  clawpanel partner dashboard [--json]
+  clawpanel partner share --code CODE [--json]
+  clawpanel starter open [--json]
+  clawpanel credits open [--json]
   clawpanel serve [options]          Start the local stdio MCP server
   clawpanel --version                Print version
   clawpanel --help                   Print this help
 
 CONNECT OPTIONS
+  --client <client>    claude (.mcp.json, default) or codex (.codex/config.toml)
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
   --token <token>      Bearer token for the hosted brain (or CLAWPANEL_TOKEN env)
   --runtime-key <key> Runtime possession key (or CLAWPANEL_RUNTIME_KEY env)
   --api-url <url>      Hosted API base URL (default: https://clawpanel.app)
-  --output <file>      Write config to a specific file (default: .mcp.json)
-  --print              Print the config JSON instead of writing a file
+  --output <file>      Write config to a specific file
+  --print              Print the config instead of writing a file
   --workspace <dir>    Workspace directory for the local server (default: cwd)
 
 TASK CONNECTION
@@ -123,6 +135,20 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     return 0;
   }
+  if (argv[0] === "login") {
+    if (argv.length > 2 || (argv[1] && argv[1] !== "--print")) throw new Error("Use clawpanel login [--print].");
+    process.stdout.write(openSignIn({ printOnly: argv[1] === "--print" }) + "\n");
+    return 0;
+  }
+  if (argv[0] === "skills") {
+    process.stdout.write(await skillsCommand(argv.slice(1)) + "\n");
+    return 0;
+  }
+  if (["marketplace", "partner", "starter", "credits"].includes(argv[0] ?? "")) {
+    const { json, data } = commerceCommand(argv);
+    process.stdout.write((json ? JSON.stringify(data) : ("shareText" in data ? data.shareText : `${data.url}\n${data.handoff}`)) + "\n");
+    return 0;
+  }
   if (argv[0] === "runtime") {
     const action = argv[1];
     const { flags } = parseArgs(argv.slice(2));
@@ -154,15 +180,26 @@ async function main(argv: string[]): Promise<number> {
       process.stdout.write(HELP);
       return 0;
     case "connect": {
-      const result = await runConnect({
+      const client = flags.client ?? "claude";
+      if (client !== "claude" && client !== "codex") throw new Error("Choose --client claude or --client codex.");
+      const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
+        localEntry: { node: process.execPath, cli: fileURLToPath(import.meta.url) },
         token: stringFlag(flags, "token"),
         runtimeKey: stringFlag(flags, "runtime-key"),
         apiUrl: stringFlag(flags, "api-url"),
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
-      });
+      };
+      if (client === "codex") {
+        const result = await runCodexConnect(options);
+        process.stdout.write(result.writtenTo
+          ? `Wrote Codex MCP config to ${result.writtenTo}\n`
+          : result.content);
+        return 0;
+      }
+      const result = await runConnect(options);
       if (result.writtenTo) {
         process.stdout.write(`Wrote MCP config for ClawPanel to ${result.writtenTo}\n`);
         process.stdout.write(

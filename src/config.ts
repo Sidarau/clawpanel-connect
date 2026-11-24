@@ -40,14 +40,14 @@ export interface ClientConfig {
 
 /**
  * Free, local, account-less config: point the agent at the open-source
- * MCP server running via npx. No token required.
+ * MCP server using the current installed entry point. No token required.
  */
-export function buildLocalConfig(workspaceDir: string): ClientConfig {
+export function buildLocalConfig(workspaceDir: string, local?: { node: string; cli: string }): ClientConfig {
   return {
     mcpServers: {
       clawpanel: {
-        command: "npx",
-        args: ["-y", "clawpanel@latest", "serve"],
+        command: local?.node ?? "npx",
+        args: local ? [local.cli, "serve"] : ["-y", "clawpanel@latest", "serve"],
         env: {
           CLAWPANEL_WORKSPACE: workspaceDir,
         },
@@ -63,6 +63,21 @@ export function buildLocalConfig(workspaceDir: string): ClientConfig {
 export function buildHostedConfig(apiUrl: string, token: string, runtimeKey: string): ClientConfig {
   if (!token?.trim() || /[\r\n]/.test(token)) throw new Error("A nonempty bearer token is required");
   if (!runtimeKey?.trim() || /[\r\n]/.test(runtimeKey)) throw new Error("A nonempty runtime key is required");
+  return {
+    mcpServers: {
+      clawpanel: {
+        type: "http",
+        url: hostedMcpUrl(apiUrl),
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          "x-runtime-key": runtimeKey.trim(),
+        },
+      },
+    },
+  };
+}
+
+export function hostedMcpUrl(apiUrl: string): string {
   let url: URL;
   try { url = new URL(apiUrl); } catch { throw new Error("Hosted API URL must be a valid HTTPS origin"); }
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
@@ -71,17 +86,5 @@ export function buildHostedConfig(apiUrl: string, token: string, runtimeKey: str
       !/^\/*$/.test(url.pathname)) {
     throw new Error("Hosted API URL must be an HTTPS origin (HTTP allowed only for localhost, 127.0.0.1, or [::1]) without credentials, path, query, or fragment");
   }
-  const base = url.origin;
-  return {
-    mcpServers: {
-      clawpanel: {
-        type: "http",
-        url: `${base}${MCP_PATH}`,
-        headers: {
-          Authorization: `Bearer ${token.trim()}`,
-          "x-runtime-key": runtimeKey.trim(),
-        },
-      },
-    },
-  };
+  return `${url.origin}${MCP_PATH}`;
 }
