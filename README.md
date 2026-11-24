@@ -102,13 +102,24 @@ launches Codex. The generated TOML stores the variable names.
 --workspace <dir> workspace directory (default: cwd)
 ```
 
+### Assigned Work runs
+
+On a managed machine with the per-agent Work client installed, a launcher can generate the MCP config for the selected harness.
+
+```sh
+clawpanel connect --client codex --assigned-work
+clawpanel connect --client claude --assigned-work
+```
+
+The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
+
 ## CLI reference
 
 ```text
-clawpanel connect [--client claude|codex] [--hosted] [--api-url <u>]
+clawpanel connect [--client claude|codex] [--hosted|--assigned-work] [--api-url <u>]
                   [--token <t>] [--runtime-key <key>]
                   [--output <f>] [--print] [--workspace <dir>]
-clawpanel serve [--workspace <dir>]
+clawpanel serve [--workspace <dir>|--assigned-work]
 clawpanel --version | --help
 ```
 

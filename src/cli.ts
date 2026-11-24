@@ -16,6 +16,7 @@ import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
 import { runCodexConnect, runConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
+import { runAssignedWorkServer } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -40,6 +41,7 @@ USAGE
 
 CONNECT OPTIONS
   --client <client>    claude (.mcp.json, default) or codex (.codex/config.toml)
+  --assigned-work      Use the enrolled run's assigned Work issue and comments
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
   --token <token>      Bearer token for the hosted brain (or CLAWPANEL_TOKEN env)
@@ -57,6 +59,7 @@ TASK CONNECTION
   and summary. Responses are JSON on stdout.
 
 SERVE OPTIONS
+  --assigned-work      Start the MCP server for the enrolled Work run
   --workspace <dir>    Workspace directory (default: cwd; env CLAWPANEL_WORKSPACE)
 
 FREE TIER
@@ -185,6 +188,7 @@ async function main(argv: string[]): Promise<number> {
       const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
         hosted: boolFlag(flags, "hosted"),
+        assignedWork: boolFlag(flags, "assigned-work"),
         localEntry: { node: process.execPath, cli: fileURLToPath(import.meta.url) },
         token: stringFlag(flags, "token"),
         runtimeKey: stringFlag(flags, "runtime-key"),
@@ -211,6 +215,10 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
     case "serve": {
+      if (boolFlag(flags, "assigned-work")) {
+        await runAssignedWorkServer(process.env);
+        return 0;
+      }
       const workspaceDir = resolveWorkspaceDir(
         stringFlag(flags, "workspace") ?? process.env.CLAWPANEL_WORKSPACE,
       );

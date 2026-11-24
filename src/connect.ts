@@ -18,12 +18,14 @@ import {
   buildHostedConfig,
   buildLocalConfig,
   hostedMcpUrl,
+  WORK_RUN_ENV,
   type ClientConfig,
 } from "./config.js";
 
 export interface ConnectOptions {
   workspaceDir: string;
   hosted: boolean;
+  assignedWork?: boolean;
   localEntry?: { node: string; cli: string };
   token?: string;
   runtimeKey?: string;
@@ -42,6 +44,7 @@ export interface ConnectResult {
 export const DEFAULT_MCP_CONFIG_FILE = ".mcp.json";
 
 export function buildConnectConfig(opts: ConnectOptions): ClientConfig {
+  checkConnectionMode(opts);
   if (opts.hosted) {
     const token = opts.token ?? process.env.CLAWPANEL_TOKEN;
     if (!token?.trim()) {
@@ -53,7 +56,7 @@ export function buildConnectConfig(opts: ConnectOptions): ClientConfig {
     }
     return buildHostedConfig(opts.apiUrl ?? API_URL_DEFAULT, token, runtimeKey);
   }
-  return buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry);
+  return buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry, opts.assignedWork);
 }
 
 export async function runConnect(opts: ConnectOptions): Promise<ConnectResult> {
@@ -67,6 +70,7 @@ export async function runConnect(opts: ConnectOptions): Promise<ConnectResult> {
 }
 
 export async function runCodexConnect(opts: ConnectOptions): Promise<{ content: string; writtenTo?: string }> {
+  checkConnectionMode(opts);
   const workspace = resolve(opts.workspaceDir);
   const lines = ["[mcp_servers.clawpanel]"];
   if (opts.hosted) {
@@ -80,11 +84,14 @@ export async function runCodexConnect(opts: ConnectOptions): Promise<{ content: 
     );
   } else {
     if (!opts.localEntry) throw new Error("Start Connect from the installed ClawPanel CLI.");
-    const { node, cli } = opts.localEntry;
+    const config = buildLocalConfig(workspace, opts.localEntry, opts.assignedWork);
+    const { command, args } = config.mcpServers.clawpanel;
     lines.push(
-      `command = ${tomlString(node)}`,
-      `args = [${tomlString(cli)}, "serve"]`,
-      `env = { CLAWPANEL_WORKSPACE = ${tomlString(workspace)} }`,
+      `command = ${tomlString(command)}`,
+      `args = [${args.map(tomlString).join(", ")}]`,
+      opts.assignedWork
+        ? `env_vars = [${WORK_RUN_ENV.map(tomlString).join(", ")}]`
+        : `env = { CLAWPANEL_WORKSPACE = ${tomlString(workspace)} }`,
     );
   }
   const content = lines.join("\n") + "\n";
@@ -101,6 +108,10 @@ export async function runCodexConnect(opts: ConnectOptions): Promise<{ content: 
   }
   await writeNewConfig(outputFile, content);
   return { content, writtenTo: outputFile };
+}
+
+function checkConnectionMode(opts: ConnectOptions): void {
+  if (opts.hosted && opts.assignedWork) throw new Error("Choose either --hosted or --assigned-work.");
 }
 
 function tomlString(value: string): string {
