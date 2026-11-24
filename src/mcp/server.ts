@@ -9,7 +9,7 @@
  * brain (memory distillation, governance, approvals, vault, audit).
  */
 
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, isAbsolute, resolve, sep } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -19,13 +19,16 @@ import {
   ListToolsRequestSchema,
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
+import { marketplace, partner, commerceCommand } from "../commerce.js";
 import { FREE_TIER } from "../config.js";
 
-const require = createRequire(import.meta.url);
-const pkg = require("../../package.json") as { name: string; version: string };
-
+declare const __CLAWPANEL_BUNDLE_VERSION__: string | undefined;
 export const SERVER_NAME = "clawpanel";
-export const SERVER_VERSION = pkg.version;
+export const SERVER_VERSION =
+  typeof __CLAWPANEL_BUNDLE_VERSION__ !== "undefined"
+    ? __CLAWPANEL_BUNDLE_VERSION__
+    : (JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string }).version;
+
 
 export interface WorkspaceServerOptions {
   workspaceDir: string;
@@ -35,6 +38,9 @@ export interface WorkspaceServerOptions {
 
 export const TOOL_NAMES = {
   status: "workspace_status",
+  marketplace: "clawpanel_marketplace_contact",
+  partner: "clawpanel_partner_referral",
+  starter: "clawpanel_starter_open",
   noteList: "workspace_note_list",
   noteRead: "workspace_note_read",
   noteAppend: "workspace_note_append",
@@ -104,6 +110,21 @@ export function createWorkspaceServer(opts: WorkspaceServerOptions): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
+        name: TOOL_NAMES.marketplace,
+        description: "Get the official ClawPanel workflow or skill marketplace contact and next step. Does not transact.",
+        inputSchema: { type: "object", properties: { action: { type: "string", enum: ["buy", "sell"] } }, required: ["action"] },
+      },
+      {
+        name: TOOL_NAMES.partner,
+        description: "Open the partner dashboard or prepare a disclosed referral link with your own code. Does not publish or send.",
+        inputSchema: { type: "object", properties: { action: { type: "string", enum: ["dashboard", "share"] }, code: { type: "string" } }, required: ["action"] },
+      },
+      {
+        name: TOOL_NAMES.starter,
+        description: "Get the signed-in destination for using ClawPanel Assistant and topping up prepaid credits.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
         name: TOOL_NAMES.status,
         description: "ClawPanel workspace status: path, free-tier info.",
         inputSchema: { type: "object", properties: {} },
@@ -150,6 +171,15 @@ export function createWorkspaceServer(opts: WorkspaceServerOptions): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
     switch (name) {
+      case TOOL_NAMES.marketplace:
+        return args.action === "buy" || args.action === "sell"
+          ? textResult(JSON.stringify(marketplace(args.action))) : errorResult("Choose buy or sell.");
+      case TOOL_NAMES.partner:
+        if (args.action !== "dashboard" && args.action !== "share") return errorResult("Choose dashboard or share.");
+        try { return textResult(JSON.stringify(partner(args.action, args.code))); }
+        catch (error) { return errorResult(error instanceof Error ? error.message : "Invalid referral code."); }
+      case TOOL_NAMES.starter:
+        return textResult(JSON.stringify(commerceCommand(["starter", "open"]).data));
       case TOOL_NAMES.status: {
         return textResult(
           JSON.stringify(

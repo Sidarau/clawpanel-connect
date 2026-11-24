@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile, stat, symlink } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runConnect } from "../src/connect.js";
+import { runCodexConnect, runConnect } from "../src/connect.js";
 import { parseArgs } from "../src/cli.js";
 
 let dir: string;
@@ -57,6 +57,53 @@ describe("runConnect", () => {
     });
     expect(result.writtenTo).toBe(out);
     await expect(readFile(out, "utf8")).resolves.toContain("mcpServers");
+  });
+});
+
+describe("Codex project config", () => {
+  const localEntry = { node: "/opt/ClawPanel Tools/node", cli: "/opt/ClawPanel Tools/cli.js" };
+  const local = { hosted: false, print: false, localEntry };
+
+  it("uses the installed CLI and the selected folder", async () => {
+    const result = await runCodexConnect({ ...local, workspaceDir: dir });
+    expect(result.writtenTo).toBe(join(dir, ".codex", "config.toml"));
+    expect(result.content).toBe([
+      "[mcp_servers.clawpanel]",
+      'command = "/opt/ClawPanel Tools/node"',
+      'args = ["/opt/ClawPanel Tools/cli.js", "serve"]',
+      `env = { CLAWPANEL_WORKSPACE = ${JSON.stringify(dir)} }`,
+      "",
+    ].join("\n"));
+    expect(await readFile(result.writtenTo!, "utf8")).toBe(result.content);
+  });
+
+  it("declares hosted credential references without writing values", async () => {
+    const result = await runCodexConnect({ workspaceDir: dir, hosted: true, print: true });
+    expect(result.content).toBe([
+      "[mcp_servers.clawpanel]",
+      'url = "https://clawpanel.app/api/mcp"',
+      'bearer_token_env_var = "CLAWPANEL_TOKEN"',
+      'env_http_headers = { "x-runtime-key" = "CLAWPANEL_RUNTIME_KEY" }',
+      "",
+    ].join("\n"));
+    expect(result.writtenTo).toBeUndefined();
+    await expect(stat(join(dir, ".codex"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(runCodexConnect({
+      workspaceDir: dir, hosted: true, print: false, token: "fixture-token", runtimeKey: "fixture-key",
+    })).rejects.toThrow(/Omit credential flags/);
+    await expect(runCodexConnect({
+      workspaceDir: dir, hosted: true, print: true, apiUrl: "https://clawpanel.app/other/path",
+    })).rejects.toThrow(/HTTPS origin/);
+  });
+
+  it("preserves existing config and refuses a symlinked .codex directory", async () => {
+    const outputFile = join(dir, "existing.toml");
+    await writeFile(outputFile, "[mcp_servers.other]\n");
+    await expect(runCodexConnect({ ...local, workspaceDir: dir, outputFile })).rejects.toThrow(/already exists/);
+    expect(await readFile(outputFile, "utf8")).toBe("[mcp_servers.other]\n");
+    await symlink(dir, join(dir, ".codex"), "dir");
+    await expect(runCodexConnect({ ...local, workspaceDir: dir })).rejects.toThrow(/must be a directory/);
+    await expect(stat(join(dir, "config.toml"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

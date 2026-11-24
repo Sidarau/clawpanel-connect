@@ -43,6 +43,21 @@ describe("MCP server", () => {
     expect(names).toEqual(Object.values(TOOL_NAMES).sort());
   });
 
+  it("returns the 50/50 creator handoff without performing a sale", async () => {
+    const result = await client.callTool({ name: TOOL_NAMES.marketplace, arguments: { action: "sell" } });
+    expect(JSON.parse(textOf(result))).toMatchObject({ url: "https://zeuglab.com/contact", creatorSharePercent: 50 });
+  });
+
+  it("returns disclosed share text and rejects malformed referral input", async () => {
+    const code = "a".repeat(32);
+    const input = { name: TOOL_NAMES.partner, arguments: { action: "share", code } };
+    const result = JSON.parse(textOf(await client.callTool(input)));
+    expect(result.url).toBe(`https://clawpanel.app/refer/${code}`);
+    expect(result.shareText).toContain("I may earn a commission");
+    const invalid = await client.callTool({ ...input, arguments: { ...input.arguments, code: "../other" } });
+    expect(invalid.isError).toBe(true);
+  });
+
   it("returns workspace status with free-tier info", async () => {
     const result = await client.callTool({ name: TOOL_NAMES.status, arguments: {} });
     const text = textOf(result);
