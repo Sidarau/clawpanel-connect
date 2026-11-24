@@ -1,6 +1,6 @@
 # ClawPanel
 
-Connect a ClawPanel workspace and bring workplace knowledge into your AI session. Sign in to ClawPanel when prompted and choose the workspace you want to connect. You can search for project notes and open matching sources.
+Sign in to ClawPanel and select a workspace. Search for project notes, read Work issues you have access to, and open the SOPs linked to those issues.
 
 Use a synthetic test workspace to evaluate the connector package.
 

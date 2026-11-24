@@ -6,10 +6,8 @@ Use `plugins/claude` as the plugin path in Anthropic’s developer portal. The h
 
 OpenAI reviews the complete package and scans the hosted tool metadata. Use a verified publisher organization and a global-residency API project. [OpenAI remote server requirements](https://developers.openai.com/plugins/deploy/app-review)
 
-The manifests currently describe the development connector’s knowledge search and source reads. Before a release with Work and SOP access, confirm the published tool metadata and examples against the production endpoint using a synthetic workspace. Run the same three scenarios in both native clients.
+The packages request access to the hosted connector’s knowledge search and shared Work issue reads. The OpenAI manifest includes five positive and three negative review cases. Run those cases against a dedicated synthetic workspace in both native clients before submission.
 
-1. Open the release-review issue and its linked SOP. Return the issue identifier, required reviewer action, and source citation.
-2. Try to open the similarly named private issue in a second workspace. Confirm the grant prevents its title, content, and activity from being returned.
-3. Revoke the connector and call the same read again. Confirm both clients stop receiving workspace results and request a fresh connection.
+Seed the review workspace with the knowledge source and issue named in the cases. Give the connected reviewer access to the issue and linked SOP. Seed the separate-workspace issue with the specified UUID and verify it is inaccessible to the reviewer. Revoke a separate test connection and confirm that it stops receiving workspace results.
 
-Use the publisher’s submission portal to provide synthetic review credentials. [Setup](https://clawpanel.app/workflow-guides/setup.md) · [Privacy](https://clawpanel.app/privacy) · [Terms and contact](https://clawpanel.app/terms)
+Set the OpenAI domain challenge from the publisher dashboard on the MCP host. Add the recorded walkthrough and synthetic reviewer credentials through the relevant publisher portal. [Setup](https://clawpanel.app/workflow-guides/setup.md) · [Privacy](https://clawpanel.app/privacy) · [Terms and contact](https://clawpanel.app/terms)

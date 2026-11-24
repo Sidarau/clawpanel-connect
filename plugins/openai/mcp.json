@@ -3,7 +3,18 @@
   "mcpServers": {
     "clawpanel": {
       "type": "streamable-http",
-      "url": "https://clawpanel-mcp.fly.dev/mcp"
+      "url": "https://clawpanel-mcp.fly.dev/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            },
+            "baseScopes": ["kb", "work:read"]
+          }
+        }
+      }
     }
   }
 }

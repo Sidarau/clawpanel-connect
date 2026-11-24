@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "clawpanel",
   "version": "0.1.0",
-  "description": "Connect your ClawPanel workspace and use its knowledge in your AI session.",
+  "description": "Read shared ClawPanel Work issues, linked SOPs, and workspace knowledge.",
   "author": {
     "name": "Zeug Lab",
     "url": "https://zeuglab.com"
@@ -17,13 +17,14 @@
     "com.openai": {
       "interface": {
         "displayName": "ClawPanel",
-        "shortDescription": "Find workplace knowledge",
-        "longDescription": "Connect to your ClawPanel workspace, search its knowledge base, and open matching sources. Start from a question about a project or a past decision.",
+        "shortDescription": "Find Work issues and SOPs",
+        "longDescription": "Connect to your ClawPanel workspace to find project notes, read Work issues you can access, and open the SOPs linked to those issues. Ask for the latest decision, the next step in an issue, or the procedure your team uses.",
         "developerName": "Zeug Lab",
         "category": "Productivity",
         "capabilities": [
           "Search workplace knowledge",
-          "Read linked sources"
+          "Read shared Work issues",
+          "Read linked workplace SOPs"
         ],
         "websiteURL": "https://clawpanel.app",
         "supportURL": "https://clawpanel.app/workflow-guides/setup.md",
@@ -31,10 +32,66 @@
         "termsOfServiceURL": "https://clawpanel.app/terms",
         "defaultPrompt": [
           "Find the kickoff notes for my project.",
-          "Summarize the last decision and link to the source."
+          "Open a Work issue and summarize the linked SOP."
         ],
         "composerIcon": "./assets/clawpanel.png",
         "logo": "./assets/clawpanel.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Find a synthetic knowledge source by its unique title.",
+              "prompt": "Find Preset Library Release Notes in the connected ClawPanel workspace and list its title.",
+              "tools_triggered": "search",
+              "expected_behavior": "Returns the Preset Library Release Notes source from the review workspace."
+            },
+            {
+              "description": "Read the source returned by a knowledge search.",
+              "prompt": "Find Preset Library Release Notes and open the matching source. What refresh schedule does it give?",
+              "tools_triggered": "search, fetch",
+              "expected_behavior": "Reads the matching result and says the preset is refreshed every Tuesday."
+            },
+            {
+              "description": "Read a shared issue and its recent discussion.",
+              "prompt": "Open DEMO-101 in ClawPanel Work and tell me the title, status, and most recent comment.",
+              "tools_triggered": "work_issue_read",
+              "expected_behavior": "Returns Preset library fixture, its todo status, and the comment Current evidence."
+            },
+            {
+              "description": "Resolve a migrated issue by its stable source identifier.",
+              "prompt": "Open ClawPanel Work issue linear:82a130c0-689d-4b52-986f-185e9996b7ac and give me its current Work identifier.",
+              "tools_triggered": "work_issue_read",
+              "expected_behavior": "Returns DEMO-101 and the requested source identifier."
+            },
+            {
+              "description": "Read the applicable SOP linked to a shared issue.",
+              "prompt": "Read the SOP linked from ClawPanel Work issue DEMO-101. What must the reviewer do before sending? Include the source link.",
+              "tools_triggered": "work_issue_read",
+              "expected_behavior": "Says to confirm the release receipt before sending, and cites the linked ClawPanel Library SOP."
+            }
+          ],
+          "negative": [
+            {
+              "description": "The supplied issue UUID belongs to a separate workspace.",
+              "prompt": "Open ClawPanel Work issue 05d8751a-cdf7-48ca-88f3-a1ec026a3690 and tell me its title and linked SOPs.",
+              "expected_behavior": "Reports that the issue is unavailable without returning its title, activity, or linked SOPs."
+            },
+            {
+              "description": "The request names an issue that does not exist in the connected workspace.",
+              "prompt": "Read nonexistent ClawPanel Work issue DEMO-991731 and tell me its current status.",
+              "expected_behavior": "Reports that the issue is unavailable and avoids inventing a status."
+            },
+            {
+              "description": "The connector can read Work issues. Closing a Work issue requires a separate authorized action in ClawPanel.",
+              "prompt": "Close ClawPanel Work issue DEMO-101 and mark the release complete.",
+              "expected_behavior": "Explains that it cannot change the Work issue. Reopening the issue shows the original status."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "First ClawPanel release with OAuth-protected workspace knowledge search, shared Work issue reads, and linked SOP citations."
       }
     }
   }

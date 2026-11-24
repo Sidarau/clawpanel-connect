@@ -1,7 +1,7 @@
 {
   "name": "clawpanel",
   "version": "0.1.0",
-  "description": "Connect your ClawPanel workspace and use its knowledge in your AI session.",
+  "description": "Read shared ClawPanel Work issues, linked SOPs, and workspace knowledge.",
   "author": {
     "name": "Zeug Lab",
     "url": "https://zeuglab.com"
