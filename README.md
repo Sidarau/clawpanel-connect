@@ -159,9 +159,12 @@ refer to this source build, not the currently published npm package:
 ```sh
 npm run build
 node dist/cli.js runtime pair --name Omarchy --api-url https://clawpanel.app
-# Open the printed URL yourself, sign in, review account/agent, and approve.
+# Sign in if prompted, review the selected bot, and authorize the computer.
 node dist/cli.js runtime run --endpoint http://127.0.0.1:8080/v1 --model YOUR_MODEL
 ```
+
+Pairing opens your browser with the short code filled in. On a headless
+computer, add `--no-browser` and open the printed link on another device.
 
 The endpoint is a base URL; `/chat/completions` is appended. Only numeric IPv4
 or IPv6 loopback HTTP/HTTPS addresses are accepted. Provide the existing local
