@@ -113,6 +113,20 @@ export async function runTomlConnect(opts: ConnectOptions, client: "codex" | "gr
   return { content, writtenTo: outputFile };
 }
 
+export async function runHermesConnect(opts: ConnectOptions): Promise<{ content: string; writtenTo?: string }> {
+  checkConnectionMode(opts);
+  if (!opts.localEntry || !opts.assignedWork) throw new Error("Use the installed CLI with --client hermes --assigned-work.");
+  if (!opts.print && !opts.outputFile) throw new Error("Use --print or choose a new Hermes config path with --output.");
+  const { mcpServers: { clawpanel } } = buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry, true);
+  const content = JSON.stringify({ mcp_servers: { clawpanel: {
+    ...clawpanel,
+    tools: { include: ["work_issue_read", "work_issue_comment"], prompts: false, resources: false },
+  } } }, null, 2) + "\n";
+  if (opts.print || !opts.outputFile) return { content };
+  await writeNewConfig(opts.outputFile, content);
+  return { content, writtenTo: opts.outputFile };
+}
+
 function checkConnectionMode(opts: ConnectOptions): void {
   if (opts.hosted && opts.assignedWork) throw new Error("Choose either --hosted or --assigned-work.");
 }

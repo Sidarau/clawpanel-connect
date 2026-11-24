@@ -119,6 +119,15 @@ The config passes the names of variables supplied by the managed Paperclip run. 
 
 `--client grok` configures Grok Build on the machine running the Work client.
 
+`clawpanel connect --client hermes --assigned-work --print` prints a Hermes
+config fragment with the two scoped Work tools. Use `--output` for a new profile
+config or merge the `mcp_servers.clawpanel` entry into an existing profile. The
+launcher supplies a fresh run binding for each assignment.
+
+`clawpanel work doctor --json` checks the installed helper, run binding and signed
+access to the assigned issue. Its output contains only status values. It exits
+with status 1 when access could not be verified.
+
 ## CLI reference
 
 ```text

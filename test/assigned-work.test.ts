@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
-import { runConnect, runTomlConnect } from "../src/connect.js";
-import { assignedWorkComment, createAssignedWorkClient, createAssignedWorkServer } from "../src/mcp/assigned-work.js";
+import { runConnect, runHermesConnect, runTomlConnect } from "../src/connect.js";
+import { assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, createAssignedWorkServer } from "../src/mcp/assigned-work.js";
 
 const agentId = "550e8400-e29b-41d4-a716-446655440001";
 const issueId = "550e8400-e29b-41d4-a716-446655440002";
@@ -85,9 +85,35 @@ esac
       await expect(helper({ text: "stale", clientRequestId: requestId })).rejects.toThrow("did not confirm");
       await expect(helper({ text: "unattested", clientRequestId: requestId })).rejects.toThrow("did not confirm");
       await expect(helper({ text: "revoked", clientRequestId: requestId })).rejects.toThrow("HTTP 403");
+      await expect(assignedWorkDoctor(runEnv, file)).resolves.toEqual({
+        ready: true, checks: { launcher: "ready", binding: "present", assignedIssue: "verified" },
+      });
+      await expect(assignedWorkDoctor({}, file)).resolves.toEqual({
+        ready: false, checks: { launcher: "ready", binding: "missing", assignedIssue: "unchecked" },
+      });
+      await expect(assignedWorkDoctor(runEnv, join(dir, "missing"))).resolves.toEqual({
+        ready: false, checks: { launcher: "missing", binding: "present", assignedIssue: "unchecked" },
+      });
+      await writeFile(file, "#!/bin/sh\nprintf '%s\\n' 'Local Work returned HTTP 403.' >&2\nexit 1\n");
+      await expect(assignedWorkDoctor(runEnv, file)).resolves.toEqual({
+        ready: false, checks: { launcher: "ready", binding: "present", assignedIssue: "run_or_grant_refused" },
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it("generates a Hermes profile entry with only the two Work tools and dynamic run variables", async () => {
+    const options = { workspaceDir: "/project", hosted: false, assignedWork: true,
+      localEntry: { node: "/fixture/node", cli: "/fixture/cli.js" }, print: true };
+    const { content } = await runHermesConnect(options);
+    expect(JSON.parse(content)).toMatchObject({ mcp_servers: { clawpanel: {
+      command: "/fixture/node", args: ["/fixture/cli.js", "serve", "--assigned-work"],
+      env: { PAPERCLIP_RUN_ID: "${PAPERCLIP_RUN_ID}" },
+      tools: { include: ["work_issue_read", "work_issue_comment"], prompts: false, resources: false },
+    } } });
+    expect(content).not.toContain(runEnv.PAPERCLIP_RUN_ID);
+    await expect(runHermesConnect({ ...options, print: false })).rejects.toThrow("--output");
   });
 
   it("generates client configs with run variable names and no captured credentials", async () => {

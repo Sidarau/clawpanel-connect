@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -15,6 +17,22 @@ const maxCommentLength = 32_000;
 
 type Comment = { text: string; clientRequestId: string };
 type WorkClient = (comment?: Comment) => Promise<Record<string, unknown>>;
+type WorkRefusal = "enrollment_refused" | "run_or_grant_refused" | "issue_unavailable";
+
+class WorkRefused extends Error {
+  constructor(readonly reason: WorkRefusal, status: string) {
+    super(`Work refused this run or issue (HTTP ${status}).`);
+  }
+}
+
+function workEnvironment(env: NodeJS.ProcessEnv) {
+  return Object.fromEntries(WORK_RUN_ENV.map((name) => [name, env[name] ?? ""]));
+}
+
+function hasWorkBinding(env: ReturnType<typeof workEnvironment>): boolean {
+  return isAbsolute(env.CLAWPANEL_AGENT_WORK_CONFIG ?? "")
+    && WORK_RUN_ENV.slice(1).every((name) => uuid.test(env[name] ?? ""));
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -25,11 +43,8 @@ export function createAssignedWorkClient(
   env: NodeJS.ProcessEnv,
   executable = join(homedir(), ".local", "bin", "clawpanel-work"),
 ): WorkClient {
-  const runEnv = Object.fromEntries(WORK_RUN_ENV.map((name) => [name, env[name] ?? ""]));
-  if (!isAbsolute(runEnv.CLAWPANEL_AGENT_WORK_CONFIG ?? "")
-    || !WORK_RUN_ENV.slice(1).every((name) => uuid.test(runEnv[name] ?? ""))) {
-    throw new Error(unavailable);
-  }
+  const runEnv = workEnvironment(env);
+  if (!hasWorkBinding(runEnv)) throw new Error(unavailable);
   return (comment) => new Promise((resolve, reject) => {
     const args = comment ? ["--comment-stdin"] : [];
     const unconfirmed = comment
@@ -40,7 +55,9 @@ export function createAssignedWorkClient(
     }, (error, stdout, stderr) => {
       if (error) {
         const denied = /^Local Work returned HTTP (401|403|404)\.$/.exec(stderr.trim());
-        reject(new Error(denied ? `Work refused this run or issue (HTTP ${denied[1]}).` : unconfirmed));
+        const status = denied?.[1];
+        const reason = status === "401" ? "enrollment_refused" : status === "403" ? "run_or_grant_refused" : "issue_unavailable";
+        reject(status ? new WorkRefused(reason, status) : new Error(unconfirmed));
         return;
       }
       try {
@@ -58,6 +75,25 @@ export function createAssignedWorkClient(
     child.stdin?.on("error", () => { /* The child status determines the outcome. */ });
     child.stdin?.end(comment ? JSON.stringify(comment) : undefined);
   });
+}
+
+/** Inspect this run without returning paths, identifiers, or issue content. */
+export async function assignedWorkDoctor(
+  env: NodeJS.ProcessEnv,
+  executable = join(homedir(), ".local", "bin", "clawpanel-work"),
+) {
+  const launcher = await access(executable, constants.X_OK).then(() => "ready" as const, () => "missing" as const);
+  const binding: "present" | "missing" = hasWorkBinding(workEnvironment(env)) ? "present" : "missing";
+  let assignedIssue: "unchecked" | "verified" | "unconfirmed" | WorkRefusal = "unchecked";
+  if (launcher === "ready" && binding === "present") {
+    try {
+      await createAssignedWorkClient(env, executable)();
+      assignedIssue = "verified";
+    } catch (error) {
+      assignedIssue = error instanceof WorkRefused ? error.reason : "unconfirmed";
+    }
+  }
+  return { ready: assignedIssue === "verified", checks: { launcher, binding, assignedIssue } };
 }
 
 export function assignedWorkComment(value: unknown): Comment {

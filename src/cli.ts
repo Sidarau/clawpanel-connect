@@ -14,9 +14,9 @@ import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
-import { runConnect, runTomlConnect } from "./connect.js";
+import { runConnect, runHermesConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
-import { assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
+import { assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -31,6 +31,7 @@ USAGE
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
   clawpanel work read
+  clawpanel work doctor [--json]
   clawpanel work comment < comment.json
   clawpanel marketplace buy|sell [--json]
   clawpanel partner dashboard [--json]
@@ -42,7 +43,7 @@ USAGE
   clawpanel --help                   Print this help
 
 CONNECT OPTIONS
-  --client <client>    claude (.mcp.json, default), codex (.codex/config.toml), or grok (.grok/config.toml)
+  --client <client>    claude (.mcp.json, default), codex, grok, or hermes
   --assigned-work      Use the enrolled run's assigned Work issue and comments
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
@@ -63,6 +64,8 @@ TASK CONNECTION
 ASSIGNED WORK
   Read the active run's assigned issue as JSON. A comment takes JSON with
   text and clientRequestId (UUID). Reuse that UUID when retrying the same comment.
+  Use doctor to check the installed helper, run binding, and signed issue access.
+  For Hermes, generate config with --client hermes --assigned-work --print.
 
 SERVE OPTIONS
   --assigned-work      Start the MCP server for the enrolled Work run
@@ -146,8 +149,25 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === "work" && argv[1] !== "--help" && argv[1] !== "-h") {
     const action = argv[1];
+    if (action === "doctor" && (argv.length === 2 || (argv.length === 3 && argv[2] === "--json"))) {
+      const report = await assignedWorkDoctor(process.env);
+      if (argv[2] === "--json") {
+        process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+      } else {
+        const status = { ready: "Ready", missing: "Missing", present: "Present", verified: "Verified",
+          unchecked: "Unchecked", unconfirmed: "Unconfirmed", enrollment_refused: "Enrollment refused",
+          run_or_grant_refused: "Run or project grant refused", issue_unavailable: "Assigned issue unavailable" };
+        process.stdout.write([
+          `Work helper  ${status[report.checks.launcher]}`,
+          `Run binding  ${status[report.checks.binding]}`,
+          `Issue access ${status[report.checks.assignedIssue]}`,
+          ...(report.ready ? [] : ["Run this from an enrolled agent's active Work assignment."]),
+        ].join("\n") + "\n");
+      }
+      return report.ready ? 0 : 1;
+    }
     if (argv.length !== 2 || (action !== "read" && action !== "comment")) {
-      throw new Error("Use clawpanel work read or clawpanel work comment with JSON on stdin.");
+      throw new Error("Use clawpanel work read, work comment with JSON on stdin, or work doctor [--json].");
     }
     const client = createAssignedWorkClient(process.env);
     const comment = action === "comment" ? assignedWorkComment(await readJsonObject(process.stdin, "The Work comment", 256)
@@ -204,8 +224,8 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "connect": {
       const client = flags.client ?? "claude";
-      if (client !== "claude" && client !== "codex" && client !== "grok") {
-        throw new Error("Choose --client claude, --client codex, or --client grok.");
+      if (client !== "claude" && client !== "codex" && client !== "grok" && client !== "hermes") {
+        throw new Error("Choose --client claude, codex, grok, or hermes.");
       }
       const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
@@ -218,6 +238,11 @@ async function main(argv: string[]): Promise<number> {
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
       };
+      if (client === "hermes") {
+        const result = await runHermesConnect(options);
+        process.stdout.write(result.writtenTo ? `Wrote Hermes MCP config to ${result.writtenTo}\n` : result.content);
+        return 0;
+      }
       if (client !== "claude") {
         const result = await runTomlConnect(options, client);
         const clientName = client === "codex" ? "Codex" : "Grok Build";
