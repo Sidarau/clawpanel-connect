@@ -17,7 +17,7 @@ import { commerceCommand } from "./commerce.js";
 import { runSquare } from "./square.js";
 import { runConnect, runHermesConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
-import { assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer, workEnrollmentDoctor } from "./mcp/assigned-work.js";
+import { assignedWorkChecklist, assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer, workEnrollmentDoctor } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -34,6 +34,7 @@ USAGE
   clawpanel work read
   clawpanel work doctor [--config FILE] [--json]
   clawpanel work comment < comment.json
+  clawpanel work checklist < checklist.json
   clawpanel square list [--query TEXT] [--api-url ORIGIN]
   clawpanel square read TOPIC_ID [--api-url ORIGIN]
   clawpanel marketplace buy|sell [--json]
@@ -67,6 +68,8 @@ TASK CONNECTION
 ASSIGNED WORK
   Read the active run's assigned issue as JSON. A comment takes JSON with
   text and clientRequestId (UUID). Reuse that UUID when retrying the same comment.
+  Checklist changes take descriptionSha256 and markerOffset from work read
+  and a boolean checked value. Reopen the issue if the description changes.
   Use doctor to check the installed helper, run binding, and signed issue access.
   For Hermes, generate config with --client hermes --assigned-work --print.
 
@@ -189,16 +192,18 @@ async function main(argv: string[]): Promise<number> {
       }
       return report.ready ? 0 : 1;
     }
-    if (argv.length !== 2 || (action !== "read" && action !== "comment")) {
-      throw new Error("Use clawpanel work read, work comment with JSON on stdin, or work doctor [--config FILE] [--json].");
+    if (argv.length !== 2 || (action !== "read" && action !== "comment" && action !== "checklist")) {
+      throw new Error("Use clawpanel work read, work comment or work checklist with JSON on stdin, or work doctor [--config FILE] [--json].");
     }
     const client = createAssignedWorkClient(process.env);
-    const comment = action === "comment" ? assignedWorkComment(await readJsonObject(process.stdin, "The Work comment", 256)
+    const mutation = action === "read" ? undefined : await readJsonObject(process.stdin, "The Work " + action, 256)
       .catch((error: unknown) => {
-        if (error instanceof SyntaxError) throw new Error("Send valid Work comment JSON on stdin.");
+        if (error instanceof SyntaxError) throw new Error("Send valid Work " + action + " JSON on stdin.");
         throw error;
-      })) : undefined;
-    process.stdout.write(JSON.stringify(await client(comment), null, 2) + "\n");
+      });
+    const input = action === "checklist" ? assignedWorkChecklist(mutation)
+      : action === "comment" ? assignedWorkComment(mutation) : undefined;
+    process.stdout.write(JSON.stringify(await client(input), null, 2) + "\n");
     return 0;
   }
   if (argv[0] === "login") {

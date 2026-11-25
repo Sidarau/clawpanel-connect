@@ -190,6 +190,8 @@ terminals, and CI output. Local mode does not require or include hosted credenti
 
 An enrolled runner can use `clawpanel work read` or `clawpanel work comment < comment.json` without a native MCP client. The launcher supplies the active run, agent, company, and issue. Read returns the current assigned issue and its authorized context. Comment accepts `text` and `clientRequestId` (UUID) and returns the attributed receipt. Reuse the UUID to retry the same comment.
 
+If `clawpanel work read` returns a `checklist`, pick a marker from its `items` using the reported line number. Use `clawpanel work checklist < checklist.json` with the read's `descriptionSha256`, the item's `markerOffset` and the desired boolean `checked` state. The result identifies the assigned issue, agent and run. After a revision conflict, read the issue again before resubmitting.
+
 ## Public Square
 
 Browse published topics without a workspace connection. Both commands return JSON.

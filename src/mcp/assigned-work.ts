@@ -17,7 +17,8 @@ const maxCommentLength = 32_000;
 const workHelperPath = join(homedir(), ".local", "bin", "clawpanel-work");
 
 type Comment = { text: string; clientRequestId: string };
-type WorkClient = (comment?: Comment) => Promise<Record<string, unknown>>;
+type ChecklistChange = { descriptionSha256: string; markerOffset: number; checked: boolean };
+type WorkClient = (mutation?: Comment | ChecklistChange) => Promise<Record<string, unknown>>;
 type WorkRefusal = "enrollment_refused" | "run_or_grant_refused" | "issue_unavailable"
   | "configuration_refused" | "signing_identity_refused" | "receipt_mismatch";
 
@@ -57,18 +58,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Delegate only the enrolled run's two operations to the installed Work client. */
+/** Delegate only the enrolled run's scoped operations to the installed Work client. */
 export function createAssignedWorkClient(
   env: NodeJS.ProcessEnv,
   executable = workHelperPath,
 ): WorkClient {
   const runEnv = workEnvironment(env);
   if (bindingIssues(runEnv).length > 0) throw new Error(unavailable);
-  return (comment) => new Promise((resolve, reject) => {
-    const args = comment ? ["--comment-stdin"] : [];
-    const unconfirmed = comment
-      ? "Work did not confirm the comment. Reopen the assigned issue or retry with the same request ID."
-      : "Work could not read this assigned issue. Check the agent enrollment and project grant.";
+  return (mutation) => new Promise((resolve, reject) => {
+    const checklist = mutation && "markerOffset" in mutation ? mutation : undefined;
+    const args = checklist ? ["--checklist-stdin"] : mutation ? ["--comment-stdin"] : [];
+    const unconfirmed = checklist
+      ? "Work did not confirm the checklist change. Reopen the assigned issue to select a checkbox from the current revision."
+      : mutation ? "Work did not confirm the comment. Reopen the assigned issue or retry with the same request ID."
+        : "Work could not read this assigned issue. Check the agent enrollment and project grant.";
     const child = execFile(executable, args, {
       env: { PATH: "/usr/bin:/bin", ...runEnv }, timeout: 65_000, maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
@@ -86,8 +89,12 @@ export function createAssignedWorkClient(
         const result: unknown = JSON.parse(stdout);
         if (!isRecord(result) || result.agent_id !== runEnv.PAPERCLIP_AGENT_ID
           || result.run_id !== runEnv.PAPERCLIP_RUN_ID) throw new WorkRefused("receipt_mismatch", unconfirmed);
-        if (!comment && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new WorkRefused("receipt_mismatch", unconfirmed);
-        if (comment && (!isRecord(result.message) || result.message.kind !== "agent"
+        if (!mutation && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new WorkRefused("receipt_mismatch", unconfirmed);
+        if (checklist && (!isRecord(result.checklist) || result.checklist.issueId !== runEnv.PAPERCLIP_TASK_ID
+          || result.checklist.markerOffset !== checklist.markerOffset || result.checklist.checked !== checklist.checked
+          || typeof result.checklist.changed !== "boolean" || typeof result.checklist.descriptionSha256 !== "string"
+          || !/^[a-f0-9]{64}$/.test(result.checklist.descriptionSha256))) throw new WorkRefused("receipt_mismatch", unconfirmed);
+        if (mutation && !checklist && (!isRecord(result.message) || result.message.kind !== "agent"
           || result.message.fromAgentId !== runEnv.PAPERCLIP_AGENT_ID || result.message.fromUserId != null)) throw new WorkRefused("receipt_mismatch", unconfirmed);
         resolve(result);
       } catch (error) {
@@ -95,7 +102,7 @@ export function createAssignedWorkClient(
       }
     });
     child.stdin?.on("error", () => { /* The child status determines the outcome. */ });
-    child.stdin?.end(comment ? JSON.stringify(comment) : undefined);
+    child.stdin?.end(mutation ? JSON.stringify(mutation) : undefined);
   });
 }
 
@@ -174,6 +181,18 @@ export function assignedWorkComment(value: unknown): Comment {
     throw new Error("Supply comment text and a request UUID.");
   }
   return { text, clientRequestId };
+}
+
+export function assignedWorkChecklist(value: unknown): ChecklistChange {
+  const message = "Use the description digest and marker offset from work read with a boolean checked state.";
+  if (!isRecord(value)) throw new Error(message);
+  const { descriptionSha256, markerOffset, checked } = value;
+  if (Object.keys(value).length !== 3 || typeof descriptionSha256 !== "string"
+    || !/^[a-f0-9]{64}$/.test(descriptionSha256) || typeof markerOffset !== "number"
+    || !Number.isSafeInteger(markerOffset) || markerOffset < 0 || typeof checked !== "boolean") {
+    throw new Error(message);
+  }
+  return { descriptionSha256, markerOffset, checked };
 }
 
 function failure(text: string): CallToolResult {
