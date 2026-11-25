@@ -89,7 +89,7 @@ export function buildHostedConfig(apiUrl: string, token: string, runtimeKey: str
   };
 }
 
-export function hostedMcpUrl(apiUrl: string): string {
+export function apiOrigin(apiUrl: string): string {
   let url: URL;
   try { url = new URL(apiUrl); } catch { throw new Error("Hosted API URL must be a valid HTTPS origin"); }
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
@@ -98,5 +98,9 @@ export function hostedMcpUrl(apiUrl: string): string {
       !/^\/*$/.test(url.pathname)) {
     throw new Error("Hosted API URL must be an HTTPS origin (HTTP allowed only for localhost, 127.0.0.1, or [::1]) without credentials, path, query, or fragment");
   }
-  return `${url.origin}${MCP_PATH}`;
+  return url.origin;
+}
+
+export function hostedMcpUrl(apiUrl: string): string {
+  return `${apiOrigin(apiUrl)}${MCP_PATH}`;
 }

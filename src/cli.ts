@@ -14,9 +14,10 @@ import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
-import { runConnect, runTomlConnect } from "./connect.js";
+import { runSquare } from "./square.js";
+import { runConnect, runHermesConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
-import { assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
+import { assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer, workEnrollmentDoctor } from "./mcp/assigned-work.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -31,7 +32,10 @@ USAGE
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
   clawpanel work read
+  clawpanel work doctor [--config FILE] [--json]
   clawpanel work comment < comment.json
+  clawpanel square list [--query TEXT] [--api-url ORIGIN]
+  clawpanel square read TOPIC_ID [--api-url ORIGIN]
   clawpanel marketplace buy|sell [--json]
   clawpanel partner dashboard [--json]
   clawpanel partner share --code CODE [--json]
@@ -42,7 +46,7 @@ USAGE
   clawpanel --help                   Print this help
 
 CONNECT OPTIONS
-  --client <client>    claude (.mcp.json, default), codex (.codex/config.toml), or grok (.grok/config.toml)
+  --client <client>    claude (.mcp.json, default), codex, grok, or hermes
   --assigned-work      Use the enrolled run's assigned Work issue and comments
   --hosted             Point the agent at the hosted server-side brain (paid tier)
                        instead of the local open-source server (free tier)
@@ -63,6 +67,8 @@ TASK CONNECTION
 ASSIGNED WORK
   Read the active run's assigned issue as JSON. A comment takes JSON with
   text and clientRequestId (UUID). Reuse that UUID when retrying the same comment.
+  Use doctor to check the installed helper, run binding, and signed issue access.
+  For Hermes, generate config with --client hermes --assigned-work --print.
 
 SERVE OPTIONS
   --assigned-work      Start the MCP server for the enrolled Work run
@@ -146,8 +152,45 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === "work" && argv[1] !== "--help" && argv[1] !== "-h") {
     const action = argv[1];
+    if (action === "doctor") {
+      const { command, flags } = parseArgs(argv.slice(2));
+      if (command || Object.keys(flags).some((flag) => flag !== "config" && flag !== "json")
+        || (flags.json !== undefined && flags.json !== true)
+        || (flags.config !== undefined && (typeof flags.config !== "string" || !flags.config))) {
+        throw new Error("Use clawpanel work doctor [--config FILE] [--json].");
+      }
+      const status = { ready: "Ready", missing: "Missing", present: "Present", verified: "Verified",
+        unchecked: "Unchecked", unconfirmed: "Unconfirmed", enrollment_refused: "Enrollment refused",
+        run_or_grant_refused: "Run or project grant refused", issue_unavailable: "Assigned issue unavailable",
+        configuration_refused: "Local configuration refused", signing_identity_refused: "Signing identity refused",
+        receipt_mismatch: "Work receipt mismatch" };
+      if (typeof flags.config === "string") {
+        const report = await workEnrollmentDoctor(flags.config);
+        const output = flags.json ? JSON.stringify(report, null, 2) : [
+          `Work helper      ${status[report.checks.launcher]}`,
+          `Local enrollment ${status[report.checks.enrollment]}`,
+          `Issue access     ${status[report.checks.assignedIssue]}`,
+          report.nextAction,
+        ].join("\n");
+        process.stdout.write(output + "\n");
+        return report.configured ? 0 : 1;
+      }
+      const report = await assignedWorkDoctor(process.env);
+      if (flags.json) {
+        process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+      } else {
+        process.stdout.write([
+          `Work helper  ${status[report.checks.launcher]}`,
+          `Run binding  ${status[report.checks.binding]}`,
+          `Issue access ${status[report.checks.assignedIssue]}`,
+          ...(report.bindingIssues ?? []).map(({ field, problem }) => `  ${field} (${problem})`),
+          ...(report.nextAction ? [report.nextAction] : []),
+        ].join("\n") + "\n");
+      }
+      return report.ready ? 0 : 1;
+    }
     if (argv.length !== 2 || (action !== "read" && action !== "comment")) {
-      throw new Error("Use clawpanel work read or clawpanel work comment with JSON on stdin.");
+      throw new Error("Use clawpanel work read, work comment with JSON on stdin, or work doctor [--config FILE] [--json].");
     }
     const client = createAssignedWorkClient(process.env);
     const comment = action === "comment" ? assignedWorkComment(await readJsonObject(process.stdin, "The Work comment", 256)
@@ -161,6 +204,20 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === "login") {
     if (argv.length > 2 || (argv[1] && argv[1] !== "--print")) throw new Error("Use clawpanel login [--print].");
     process.stdout.write(openSignIn({ printOnly: argv[1] === "--print" }) + "\n");
+    return 0;
+  }
+  if (argv[0] === "square" && argv[1] !== "--help" && argv[1] !== "-h") {
+    const action = argv[1];
+    const id = action === "read" ? argv[2] : undefined;
+    const { flags, command } = parseArgs(argv.slice(action === "read" ? 3 : 2));
+    const apiUrl = stringFlag(flags, "api-url");
+    const query = stringFlag(flags, "query");
+    if ((action !== "list" && action !== "read") || command
+      || Object.keys(flags).some(key => key !== "api-url" && !(key === "query" && action === "list"))
+      || flags["api-url"] === true || flags.query === true || (action === "read" && !id)) {
+      throw new Error("Use square list [--query TEXT] or square read TOPIC_ID with an optional --api-url ORIGIN.");
+    }
+    process.stdout.write(JSON.stringify(await runSquare({ apiUrl, id, query }), null, 2) + "\n");
     return 0;
   }
   if (argv[0] === "skills") {
@@ -204,8 +261,8 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     case "connect": {
       const client = flags.client ?? "claude";
-      if (client !== "claude" && client !== "codex" && client !== "grok") {
-        throw new Error("Choose --client claude, --client codex, or --client grok.");
+      if (client !== "claude" && client !== "codex" && client !== "grok" && client !== "hermes") {
+        throw new Error("Choose --client claude, codex, grok, or hermes.");
       }
       const options = {
         workspaceDir: stringFlag(flags, "workspace") ?? process.cwd(),
@@ -218,6 +275,11 @@ async function main(argv: string[]): Promise<number> {
         outputFile: stringFlag(flags, "output"),
         print: boolFlag(flags, "print"),
       };
+      if (client === "hermes") {
+        const result = await runHermesConnect(options);
+        process.stdout.write(result.writtenTo ? `Wrote Hermes MCP config to ${result.writtenTo}\n` : result.content);
+        return 0;
+      }
       if (client !== "claude") {
         const result = await runTomlConnect(options, client);
         const clientName = client === "codex" ? "Codex" : "Grok Build";
