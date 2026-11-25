@@ -14,6 +14,7 @@ import { readJsonObject, readTaskUpdate, runTask } from "./task.js";
 import { openSignIn } from "./login.js";
 import { skillsCommand } from "./skills.js";
 import { commerceCommand } from "./commerce.js";
+import { runSquare } from "./square.js";
 import { runConnect, runHermesConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
 import { assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
@@ -33,6 +34,8 @@ USAGE
   clawpanel work read
   clawpanel work doctor [--json]
   clawpanel work comment < comment.json
+  clawpanel square list [--query TEXT] [--api-url ORIGIN]
+  clawpanel square read TOPIC_ID [--api-url ORIGIN]
   clawpanel marketplace buy|sell [--json]
   clawpanel partner dashboard [--json]
   clawpanel partner share --code CODE [--json]
@@ -181,6 +184,20 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === "login") {
     if (argv.length > 2 || (argv[1] && argv[1] !== "--print")) throw new Error("Use clawpanel login [--print].");
     process.stdout.write(openSignIn({ printOnly: argv[1] === "--print" }) + "\n");
+    return 0;
+  }
+  if (argv[0] === "square" && argv[1] !== "--help" && argv[1] !== "-h") {
+    const action = argv[1];
+    const id = action === "read" ? argv[2] : undefined;
+    const { flags, command } = parseArgs(argv.slice(action === "read" ? 3 : 2));
+    const apiUrl = stringFlag(flags, "api-url");
+    const query = stringFlag(flags, "query");
+    if ((action !== "list" && action !== "read") || command
+      || Object.keys(flags).some(key => key !== "api-url" && !(key === "query" && action === "list"))
+      || flags["api-url"] === true || flags.query === true || (action === "read" && !id)) {
+      throw new Error("Use square list [--query TEXT] or square read TOPIC_ID with an optional --api-url ORIGIN.");
+    }
+    process.stdout.write(JSON.stringify(await runSquare({ apiUrl, id, query }), null, 2) + "\n");
     return 0;
   }
   if (argv[0] === "skills") {
