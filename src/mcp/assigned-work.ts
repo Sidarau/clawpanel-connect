@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -17,21 +17,36 @@ const maxCommentLength = 32_000;
 
 type Comment = { text: string; clientRequestId: string };
 type WorkClient = (comment?: Comment) => Promise<Record<string, unknown>>;
-type WorkRefusal = "enrollment_refused" | "run_or_grant_refused" | "issue_unavailable";
+type WorkRefusal = "enrollment_refused" | "run_or_grant_refused" | "issue_unavailable"
+  | "configuration_refused" | "signing_identity_refused" | "receipt_mismatch";
 
 class WorkRefused extends Error {
-  constructor(readonly reason: WorkRefusal, status: string) {
-    super(`Work refused this run or issue (HTTP ${status}).`);
+  constructor(readonly reason: WorkRefusal, message: string) {
+    super(message);
   }
 }
+
+const localRefusals = new Map<string, WorkRefusal>([
+  ["Local Work requires an absolute private path without symbolic links.", "configuration_refused"],
+  ["The local Work file, socket, and parent directories must be private to this account.", "configuration_refused"],
+  ["The runtime agent, company and assigned issue must match an approved local Work configuration.", "configuration_refused"],
+  ["The local signing key does not match the enrolled agent.", "signing_identity_refused"],
+  ["The local Work server binding changed.", "receipt_mismatch"],
+  ["The local Work server did not confirm this run.", "receipt_mismatch"],
+  ["The local Work server returned a different issue.", "receipt_mismatch"],
+]);
 
 function workEnvironment(env: NodeJS.ProcessEnv) {
   return Object.fromEntries(WORK_RUN_ENV.map((name) => [name, env[name] ?? ""]));
 }
 
-function hasWorkBinding(env: ReturnType<typeof workEnvironment>): boolean {
-  return isAbsolute(env.CLAWPANEL_AGENT_WORK_CONFIG ?? "")
-    && WORK_RUN_ENV.slice(1).every((name) => uuid.test(env[name] ?? ""));
+function bindingIssues(env: ReturnType<typeof workEnvironment>) {
+  return WORK_RUN_ENV.flatMap((field): { field: typeof WORK_RUN_ENV[number]; problem: "missing" | "invalid" }[] => {
+    const value = env[field];
+    if (!value) return [{ field, problem: "missing" }];
+    const valid = field === "CLAWPANEL_AGENT_WORK_CONFIG" ? isAbsolute(value) : uuid.test(value);
+    return valid ? [] : [{ field, problem: "invalid" }];
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,7 +59,7 @@ export function createAssignedWorkClient(
   executable = join(homedir(), ".local", "bin", "clawpanel-work"),
 ): WorkClient {
   const runEnv = workEnvironment(env);
-  if (!hasWorkBinding(runEnv)) throw new Error(unavailable);
+  if (bindingIssues(runEnv).length > 0) throw new Error(unavailable);
   return (comment) => new Promise((resolve, reject) => {
     const args = comment ? ["--comment-stdin"] : [];
     const unconfirmed = comment
@@ -54,22 +69,25 @@ export function createAssignedWorkClient(
       env: { PATH: "/usr/bin:/bin", ...runEnv }, timeout: 65_000, maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
       if (error) {
-        const denied = /^Local Work returned HTTP (401|403|404)\.$/.exec(stderr.trim());
+        const detail = stderr.trim();
+        const denied = /^Local Work returned HTTP (401|403|404)\.$/.exec(detail);
         const status = denied?.[1];
         const reason = status === "401" ? "enrollment_refused" : status === "403" ? "run_or_grant_refused" : "issue_unavailable";
-        reject(status ? new WorkRefused(reason, status) : new Error(unconfirmed));
+        const local = localRefusals.get(detail);
+        reject(status ? new WorkRefused(reason, `Work refused this run or issue (HTTP ${status}).`)
+          : local ? new WorkRefused(local, unconfirmed) : new Error(unconfirmed));
         return;
       }
       try {
         const result: unknown = JSON.parse(stdout);
         if (!isRecord(result) || result.agent_id !== runEnv.PAPERCLIP_AGENT_ID
-          || result.run_id !== runEnv.PAPERCLIP_RUN_ID) throw new Error(unconfirmed);
-        if (!comment && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new Error(unconfirmed);
+          || result.run_id !== runEnv.PAPERCLIP_RUN_ID) throw new WorkRefused("receipt_mismatch", unconfirmed);
+        if (!comment && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new WorkRefused("receipt_mismatch", unconfirmed);
         if (comment && (!isRecord(result.message) || result.message.kind !== "agent"
-          || result.message.fromAgentId !== runEnv.PAPERCLIP_AGENT_ID || result.message.fromUserId != null)) throw new Error(unconfirmed);
+          || result.message.fromAgentId !== runEnv.PAPERCLIP_AGENT_ID || result.message.fromUserId != null)) throw new WorkRefused("receipt_mismatch", unconfirmed);
         resolve(result);
-      } catch {
-        reject(new Error(unconfirmed));
+      } catch (error) {
+        reject(error instanceof WorkRefused ? error : new Error(unconfirmed));
       }
     });
     child.stdin?.on("error", () => { /* The child status determines the outcome. */ });
@@ -77,13 +95,26 @@ export function createAssignedWorkClient(
   });
 }
 
+const workRecovery = {
+  unchecked: "Run Work Doctor again from the managed assignment.",
+  unconfirmed: "Check the installed Work helper and gateway connection on the enrolled host, then reopen the assignment.",
+  enrollment_refused: "Check that the signing connection is active for this agent in the Work gateway.",
+  run_or_grant_refused: "Check that this run is active and the enrolled actor still has access to this project.",
+  issue_unavailable: "Check that the issue still exists and is assigned to this enrolled actor.",
+  configuration_refused: "Check the enrolled Work configuration and its private permissions on the runner host.",
+  signing_identity_refused: "Check that the runner’s signing key matches its enrolled Work connection.",
+  receipt_mismatch: "Check that the Work helper, gateway and launcher agree on the active run before retrying.",
+};
+
 /** Inspect this run without returning paths, identifiers, or issue content. */
 export async function assignedWorkDoctor(
   env: NodeJS.ProcessEnv,
   executable = join(homedir(), ".local", "bin", "clawpanel-work"),
 ) {
-  const launcher = await access(executable, constants.X_OK).then(() => "ready" as const, () => "missing" as const);
-  const binding: "present" | "missing" = hasWorkBinding(workEnvironment(env)) ? "present" : "missing";
+  const launcher = await Promise.all([access(executable, constants.X_OK), stat(executable)])
+    .then(([, entry]) => entry.isFile() ? "ready" as const : "missing" as const, () => "missing" as const);
+  const problems = bindingIssues(workEnvironment(env));
+  const binding = problems.length === 0 ? "present" as const : "missing" as const;
   let assignedIssue: "unchecked" | "verified" | "unconfirmed" | WorkRefusal = "unchecked";
   if (launcher === "ready" && binding === "present") {
     try {
@@ -93,7 +124,11 @@ export async function assignedWorkDoctor(
       assignedIssue = error instanceof WorkRefused ? error.reason : "unconfirmed";
     }
   }
-  return { ready: assignedIssue === "verified", checks: { launcher, binding, assignedIssue } };
+  const nextAction = launcher === "missing" ? "Install the enrolled Work helper on the runner host."
+    : binding === "missing" ? "Start the agent from its managed Work assignment and check the listed launcher fields."
+    : assignedIssue === "verified" ? undefined : workRecovery[assignedIssue];
+  return { ready: assignedIssue === "verified", checks: { launcher, binding, assignedIssue },
+    ...(problems.length ? { bindingIssues: problems } : {}), ...(nextAction ? { nextAction } : {}) };
 }
 
 export function assignedWorkComment(value: unknown): Comment {

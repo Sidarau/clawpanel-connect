@@ -159,12 +159,15 @@ async function main(argv: string[]): Promise<number> {
       } else {
         const status = { ready: "Ready", missing: "Missing", present: "Present", verified: "Verified",
           unchecked: "Unchecked", unconfirmed: "Unconfirmed", enrollment_refused: "Enrollment refused",
-          run_or_grant_refused: "Run or project grant refused", issue_unavailable: "Assigned issue unavailable" };
+          run_or_grant_refused: "Run or project grant refused", issue_unavailable: "Assigned issue unavailable",
+          configuration_refused: "Local configuration refused", signing_identity_refused: "Signing identity refused",
+          receipt_mismatch: "Work receipt mismatch" };
         process.stdout.write([
           `Work helper  ${status[report.checks.launcher]}`,
           `Run binding  ${status[report.checks.binding]}`,
           `Issue access ${status[report.checks.assignedIssue]}`,
-          ...(report.ready ? [] : ["Run this from an enrolled agent's active Work assignment."]),
+          ...(report.bindingIssues ?? []).map(({ field, problem }) => `  ${field} (${problem})`),
+          ...(report.nextAction ? [report.nextAction] : []),
         ].join("\n") + "\n");
       }
       return report.ready ? 0 : 1;

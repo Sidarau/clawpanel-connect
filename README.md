@@ -125,8 +125,10 @@ config or merge the `mcp_servers.clawpanel` entry into an existing profile. The
 launcher supplies a fresh run binding for each assignment.
 
 `clawpanel work doctor --json` checks the installed helper, run binding and signed
-access to the assigned issue. Its output contains only status values. It exits
-with status 1 when access could not be verified.
+access to the assigned issue. On failure it reports the affected launcher field
+names and an action for the operator. It exits with status 1 when access could
+not be verified. Credential values, local file paths and issue content stay on
+the enrolled host.
 
 ## CLI reference
 

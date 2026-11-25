@@ -88,16 +88,37 @@ esac
       await expect(assignedWorkDoctor(runEnv, file)).resolves.toEqual({
         ready: true, checks: { launcher: "ready", binding: "present", assignedIssue: "verified" },
       });
-      await expect(assignedWorkDoctor({}, file)).resolves.toEqual({
+      await expect(assignedWorkDoctor({}, file)).resolves.toMatchObject({
         ready: false, checks: { launcher: "ready", binding: "missing", assignedIssue: "unchecked" },
+        bindingIssues: expect.arrayContaining([{ field: "PAPERCLIP_RUN_ID", problem: "missing" }]),
       });
-      await expect(assignedWorkDoctor(runEnv, join(dir, "missing"))).resolves.toEqual({
+      const malformed = await assignedWorkDoctor({ ...runEnv, PAPERCLIP_RUN_ID: "fixture-secret" }, file);
+      expect(malformed.bindingIssues).toEqual([{ field: "PAPERCLIP_RUN_ID", problem: "invalid" }]);
+      expect(JSON.stringify(malformed)).not.toContain("fixture-secret");
+      await expect(assignedWorkDoctor(runEnv, dir)).resolves.toMatchObject({
+        checks: { launcher: "missing" },
+      });
+      await expect(assignedWorkDoctor(runEnv, join(dir, "missing"))).resolves.toMatchObject({
         ready: false, checks: { launcher: "missing", binding: "present", assignedIssue: "unchecked" },
+        nextAction: expect.stringContaining("Install"),
       });
       await writeFile(file, "#!/bin/sh\nprintf '%s\\n' 'Local Work returned HTTP 403.' >&2\nexit 1\n");
-      await expect(assignedWorkDoctor(runEnv, file)).resolves.toEqual({
+      await expect(assignedWorkDoctor(runEnv, file)).resolves.toMatchObject({
         ready: false, checks: { launcher: "ready", binding: "present", assignedIssue: "run_or_grant_refused" },
+        nextAction: expect.stringContaining("project"),
       });
+      await writeFile(file, "#!/bin/sh\nprintf '%s\\n' 'The local signing key does not match the enrolled agent.' >&2\nexit 1\n");
+      await expect(assignedWorkDoctor(runEnv, file)).resolves.toMatchObject({
+        checks: { assignedIssue: "signing_identity_refused" }, nextAction: expect.stringContaining("signing key"),
+      });
+      await writeFile(file, `#!/bin/sh\nprintf '%s\\n' '{"agent_id":"${agentId}","run_id":"${issueId}"}'\n`);
+      await expect(assignedWorkDoctor(runEnv, file)).resolves.toMatchObject({
+        checks: { assignedIssue: "receipt_mismatch" }, nextAction: expect.stringContaining("active run"),
+      });
+      await writeFile(file, "#!/bin/sh\nprintf '%s\\n' 'Cannot read /fixture/private-key' >&2\nexit 1\n");
+      const unexpected = await assignedWorkDoctor(runEnv, file);
+      expect(unexpected.checks.assignedIssue).toBe("unconfirmed");
+      expect(JSON.stringify(unexpected)).not.toContain("/fixture/private-key");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
