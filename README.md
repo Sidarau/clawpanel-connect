@@ -115,7 +115,7 @@ clawpanel connect --client claude --assigned-work
 clawpanel connect --client grok --assigned-work
 ```
 
-The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
+The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. If the read includes a checklist, `work_issue_checklist` sets one item using the same description digest, marker offset and checked state as the CLI. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
 
 `--client grok` configures Grok Build on the machine running the Work client.
 
@@ -189,6 +189,8 @@ terminals, and CI output. Local mode does not require or include hosted credenti
 ## Assigned Work on the command line
 
 An enrolled runner can use `clawpanel work read` or `clawpanel work comment < comment.json` without a native MCP client. The launcher supplies the active run, agent, company, and issue. Read returns the current assigned issue and its authorized context. Comment accepts `text` and `clientRequestId` (UUID) and returns the attributed receipt. Reuse the UUID to retry the same comment.
+
+If `clawpanel work read` returns a `checklist`, pick a marker from its `items` using the reported line number. Use `clawpanel work checklist < checklist.json` with the read's `descriptionSha256`, the item's `markerOffset` and the desired boolean `checked` state. The result identifies the assigned issue, agent and run. After a revision conflict, read the issue again before resubmitting.
 
 ## Public Square
 

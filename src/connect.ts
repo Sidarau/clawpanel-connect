@@ -19,6 +19,7 @@ import {
   buildLocalConfig,
   hostedMcpUrl,
   WORK_RUN_ENV,
+  WORK_TOOLS,
   type ClientConfig,
 } from "./config.js";
 
@@ -120,7 +121,7 @@ export async function runHermesConnect(opts: ConnectOptions): Promise<{ content:
   const { mcpServers: { clawpanel } } = buildLocalConfig(resolve(opts.workspaceDir), opts.localEntry, true);
   const content = JSON.stringify({ mcp_servers: { clawpanel: {
     ...clawpanel,
-    tools: { include: ["work_issue_read", "work_issue_comment"], prompts: false, resources: false },
+    tools: { include: WORK_TOOLS, prompts: false, resources: false },
   } } }, null, 2) + "\n";
   if (opts.print || !opts.outputFile) return { content };
   await writeNewConfig(opts.outputFile, content);

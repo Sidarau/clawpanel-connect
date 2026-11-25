@@ -19,8 +19,8 @@ const runEnv = {
 };
 
 describe("assigned Work MCP", () => {
-  it("exposes only the assigned issue and attributed comments", async () => {
-    const handler = vi.fn(async (_comment?: { text: string; clientRequestId: string }) => ({ task: { id: issueId } }));
+  it("exposes only the assigned issue, comments and checklist items", async () => {
+    const handler = vi.fn(async (_mutation?: unknown) => ({ task: { id: issueId } }));
     const server = createAssignedWorkServer(handler);
     const client = new Client({ name: "test", version: "1" });
     const [left, right] = InMemoryTransport.createLinkedPair();
@@ -28,15 +28,19 @@ describe("assigned Work MCP", () => {
     await client.connect(left);
     try {
       const tools = (await client.listTools()).tools;
-      expect(tools.map((tool) => tool.name)).toEqual(["work_issue_read", "work_issue_comment"]);
+      expect(tools.map((tool) => tool.name)).toEqual(["work_issue_read", "work_issue_comment", "work_issue_checklist"]);
       expect(tools[0]?.annotations?.readOnlyHint).toBe(true);
       expect((await client.callTool({ name: "work_issue_read", arguments: { taskId: issueId } })).isError).toBe(true);
       expect((await client.callTool({ name: "work_issue_comment", arguments: { text: " ", clientRequestId: requestId } })).isError).toBe(true);
+      const checkbox = { descriptionSha256: "a".repeat(64), markerOffset: 9, checked: true };
+      expect((await client.callTool({ name: "work_issue_checklist", arguments: { ...checkbox, issueId } })).isError).toBe(true);
+      expect((await client.callTool({ name: "work_issue_checklist", arguments: { ...checkbox, markerOffset: -1 } })).isError).toBe(true);
       expect(handler).not.toHaveBeenCalled();
       expect((await client.callTool({ name: "work_issue_read" })).structuredContent).toEqual({ task: { id: issueId } });
       const note = { text: "Verified the assigned issue.", clientRequestId: requestId };
       await client.callTool({ name: "work_issue_comment", arguments: note });
-      expect(handler.mock.calls).toEqual([[undefined], [note]]);
+      await client.callTool({ name: "work_issue_checklist", arguments: checkbox });
+      expect(handler.mock.calls).toEqual([[undefined], [note], [checkbox]]);
     } finally {
       await client.close();
       await server.close();
@@ -131,7 +135,7 @@ esac
     expect(JSON.parse(content)).toMatchObject({ mcp_servers: { clawpanel: {
       command: "/fixture/node", args: ["/fixture/cli.js", "serve", "--assigned-work"],
       env: { PAPERCLIP_RUN_ID: "${PAPERCLIP_RUN_ID}" },
-      tools: { include: ["work_issue_read", "work_issue_comment"], prompts: false, resources: false },
+      tools: { include: ["work_issue_read", "work_issue_comment", "work_issue_checklist"], prompts: false, resources: false },
     } } });
     expect(content).not.toContain(runEnv.PAPERCLIP_RUN_ID);
     await expect(runHermesConnect({ ...options, print: false })).rejects.toThrow("--output");
