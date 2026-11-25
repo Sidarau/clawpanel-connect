@@ -14,6 +14,7 @@ const unavailable = "Assigned Work requires an enrolled agent and an active Work
 const readTool = "work_issue_read";
 const commentTool = "work_issue_comment";
 const maxCommentLength = 32_000;
+const workHelperPath = join(homedir(), ".local", "bin", "clawpanel-work");
 
 type Comment = { text: string; clientRequestId: string };
 type WorkClient = (comment?: Comment) => Promise<Record<string, unknown>>;
@@ -30,6 +31,9 @@ const localRefusals = new Map<string, WorkRefusal>([
   ["Local Work requires an absolute private path without symbolic links.", "configuration_refused"],
   ["The local Work file, socket, and parent directories must be private to this account.", "configuration_refused"],
   ["The runtime agent, company and assigned issue must match an approved local Work configuration.", "configuration_refused"],
+  ["The enrolled Work configuration could not be read.", "configuration_refused"],
+  ["The enrolled Work configuration is invalid.", "configuration_refused"],
+  ["The local Work signing key could not be read.", "signing_identity_refused"],
   ["The local signing key does not match the enrolled agent.", "signing_identity_refused"],
   ["The local Work server binding changed.", "receipt_mismatch"],
   ["The local Work server did not confirm this run.", "receipt_mismatch"],
@@ -56,7 +60,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Delegate only the enrolled run's two operations to the installed Work client. */
 export function createAssignedWorkClient(
   env: NodeJS.ProcessEnv,
-  executable = join(homedir(), ".local", "bin", "clawpanel-work"),
+  executable = workHelperPath,
 ): WorkClient {
   const runEnv = workEnvironment(env);
   if (bindingIssues(runEnv).length > 0) throw new Error(unavailable);
@@ -106,13 +110,44 @@ const workRecovery = {
   receipt_mismatch: "Check that the Work helper, gateway and launcher agree on the active run before retrying.",
 };
 
+async function workLauncher(executable: string) {
+  return Promise.all([access(executable, constants.X_OK), stat(executable)])
+    .then(([, entry]) => entry.isFile() ? "ready" as const : "missing" as const, () => "missing" as const);
+}
+
+/** Ask the installed helper to verify its own local config and signer without a Work request. */
+export async function workEnrollmentDoctor(config: string, executable = workHelperPath) {
+  const launcher = await workLauncher(executable);
+  let enrollment: "unchecked" | "verified" | "unconfirmed" | WorkRefusal = "unchecked";
+  if (!isAbsolute(config)) {
+    enrollment = "configuration_refused";
+  } else if (launcher === "ready") {
+    enrollment = await new Promise<"verified" | "unconfirmed" | WorkRefusal>((resolve) => {
+      const child = execFile(executable, ["--check-config"], {
+        env: { PATH: "/usr/bin:/bin", CLAWPANEL_AGENT_WORK_CONFIG: config },
+        timeout: 10_000,
+        maxBuffer: 64 * 1024,
+      }, (error, stdout, stderr) => {
+        if (error) resolve(localRefusals.get(stderr.trim()) ?? "unconfirmed");
+        else resolve(stdout.trim() === '{"enrollment":"verified"}' ? "verified" : "unconfirmed");
+      });
+      child.stdin?.end();
+    });
+  }
+  const nextAction = launcher === "missing" ? "Install the enrolled Work helper on the runner host."
+    : enrollment === "unconfirmed" ? "Check that the installed Work helper supports --check-config."
+    : enrollment === "verified" ? "Run Work Doctor inside the managed assignment to verify signed issue access."
+    : workRecovery[enrollment];
+  return { configured: enrollment === "verified",
+    checks: { launcher, enrollment, assignedIssue: "unchecked" as const }, nextAction };
+}
+
 /** Inspect this run without returning paths, identifiers, or issue content. */
 export async function assignedWorkDoctor(
   env: NodeJS.ProcessEnv,
-  executable = join(homedir(), ".local", "bin", "clawpanel-work"),
+  executable = workHelperPath,
 ) {
-  const launcher = await Promise.all([access(executable, constants.X_OK), stat(executable)])
-    .then(([, entry]) => entry.isFile() ? "ready" as const : "missing" as const, () => "missing" as const);
+  const launcher = await workLauncher(executable);
   const problems = bindingIssues(workEnvironment(env));
   const binding = problems.length === 0 ? "present" as const : "missing" as const;
   let assignedIssue: "unchecked" | "verified" | "unconfirmed" | WorkRefusal = "unchecked";

@@ -130,6 +130,12 @@ names and an action for the operator. It exits with status 1 when access could
 not be verified. Credential values, local file paths and issue content stay on
 the enrolled host.
 
+Before dispatch, run `clawpanel work doctor --config /absolute/path/to/agent-work.json --json`
+on the enrolled host. It asks a Work helper that supports `--check-config` to
+verify the local configuration and signing key without calling Work. The result
+marks issue access as unchecked. Run Doctor inside the managed assignment to
+verify access to the specific issue and project.
+
 ## CLI reference
 
 ```text
