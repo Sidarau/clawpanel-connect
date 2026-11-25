@@ -6,6 +6,8 @@
 
 export const API_URL_DEFAULT = "https://clawpanel.app";
 export const MCP_PATH = "/api/mcp";
+export const WORK_TOOLS = ["work_issue_read", "work_issue_comment", "work_issue_checklist"] as const;
+
 export const WORK_RUN_ENV = [
   "CLAWPANEL_AGENT_WORK_CONFIG",
   "PAPERCLIP_AGENT_ID",

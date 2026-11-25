@@ -115,7 +115,7 @@ clawpanel connect --client claude --assigned-work
 clawpanel connect --client grok --assigned-work
 ```
 
-The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
+The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. If the read includes a checklist, `work_issue_checklist` sets one item using the same description digest, marker offset and checked state as the CLI. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
 
 `--client grok` configures Grok Build on the machine running the Work client.
 

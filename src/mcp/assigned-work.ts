@@ -6,13 +6,12 @@ import { isAbsolute, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { WORK_RUN_ENV } from "../config.js";
+import { WORK_RUN_ENV, WORK_TOOLS } from "../config.js";
 import { SERVER_NAME, SERVER_VERSION } from "./server.js";
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const unavailable = "Assigned Work requires an enrolled agent and an active Work run on this machine.";
-const readTool = "work_issue_read";
-const commentTool = "work_issue_comment";
+const [readTool, commentTool, checklistTool] = WORK_TOOLS;
 const maxCommentLength = 32_000;
 const workHelperPath = join(homedir(), ".local", "bin", "clawpanel-work");
 
@@ -202,7 +201,7 @@ function failure(text: string): CallToolResult {
 export function createAssignedWorkServer(client: WorkClient): Server {
   const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, {
     capabilities: { tools: {} },
-    instructions: "Use work_issue_read for the current assigned Work issue and its discussion. Post evidence with work_issue_comment when the run calls for an attributed update.",
+    instructions: "Use work_issue_read for the assigned issue and discussion. If the read includes a checklist, use work_issue_checklist to set an item when the task calls for it. Use work_issue_comment for attributed updates.",
   });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -223,24 +222,41 @@ export function createAssignedWorkServer(client: WorkClient): Server {
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
+      {
+        name: checklistTool,
+        description: "Set one checkbox on the assigned Work issue. Use the checklist descriptionSha256 and markerOffset returned by work_issue_read. If the description changed, read the issue again before retrying.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            descriptionSha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            markerOffset: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            checked: { type: "boolean" },
+          },
+          required: ["descriptionSha256", "markerOffset", "checked"],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
     ],
   }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     const args = params.arguments ?? {};
-    let comment: Comment | undefined;
-    if (params.name === readTool) {
-      if (Object.keys(args).length) return failure("The issue is selected by the active Work run.");
-    } else if (params.name === commentTool) {
-      try {
-        comment = assignedWorkComment(args);
-      } catch (error) {
-        return failure((error as Error).message);
-      }
-    } else {
-      return failure("Unknown assigned Work tool.");
-    }
     try {
-      const result = await client(comment);
+      let mutation: Comment | ChecklistChange | undefined;
+      switch (params.name) {
+        case readTool:
+          if (Object.keys(args).length) return failure("The issue is selected by the active Work run.");
+          break;
+        case commentTool:
+          mutation = assignedWorkComment(args);
+          break;
+        case checklistTool:
+          mutation = assignedWorkChecklist(args);
+          break;
+        default:
+          return failure("Unknown assigned Work tool.");
+      }
+      const result = await client(mutation);
       return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
       return failure(error instanceof Error ? error.message : "Assigned Work is unavailable.");
