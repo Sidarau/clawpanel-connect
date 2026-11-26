@@ -6,18 +6,18 @@ import { isAbsolute, join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { WORK_RUN_ENV } from "../config.js";
+import { WORK_RUN_ENV, WORK_TOOLS } from "../config.js";
 import { SERVER_NAME, SERVER_VERSION } from "./server.js";
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const unavailable = "Assigned Work requires an enrolled agent and an active Work run on this machine.";
-const readTool = "work_issue_read";
-const commentTool = "work_issue_comment";
+const [readTool, commentTool, checklistTool] = WORK_TOOLS;
 const maxCommentLength = 32_000;
 const workHelperPath = join(homedir(), ".local", "bin", "clawpanel-work");
 
 type Comment = { text: string; clientRequestId: string };
-type WorkClient = (comment?: Comment) => Promise<Record<string, unknown>>;
+type ChecklistChange = { descriptionSha256: string; markerOffset: number; checked: boolean };
+type WorkClient = (mutation?: Comment | ChecklistChange) => Promise<Record<string, unknown>>;
 type WorkRefusal = "enrollment_refused" | "run_or_grant_refused" | "issue_unavailable"
   | "configuration_refused" | "signing_identity_refused" | "receipt_mismatch";
 
@@ -57,18 +57,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Delegate only the enrolled run's two operations to the installed Work client. */
+/** Delegate only the enrolled run's scoped operations to the installed Work client. */
 export function createAssignedWorkClient(
   env: NodeJS.ProcessEnv,
   executable = workHelperPath,
 ): WorkClient {
   const runEnv = workEnvironment(env);
   if (bindingIssues(runEnv).length > 0) throw new Error(unavailable);
-  return (comment) => new Promise((resolve, reject) => {
-    const args = comment ? ["--comment-stdin"] : [];
-    const unconfirmed = comment
-      ? "Work did not confirm the comment. Reopen the assigned issue or retry with the same request ID."
-      : "Work could not read this assigned issue. Check the agent enrollment and project grant.";
+  return (mutation) => new Promise((resolve, reject) => {
+    const checklist = mutation && "markerOffset" in mutation ? mutation : undefined;
+    const args = checklist ? ["--checklist-stdin"] : mutation ? ["--comment-stdin"] : [];
+    const unconfirmed = checklist
+      ? "Work did not confirm the checklist change. Reopen the assigned issue to select a checkbox from the current revision."
+      : mutation ? "Work did not confirm the comment. Reopen the assigned issue or retry with the same request ID."
+        : "Work could not read this assigned issue. Check the agent enrollment and project grant.";
     const child = execFile(executable, args, {
       env: { PATH: "/usr/bin:/bin", ...runEnv }, timeout: 65_000, maxBuffer: 16 * 1024 * 1024,
     }, (error, stdout, stderr) => {
@@ -86,8 +88,12 @@ export function createAssignedWorkClient(
         const result: unknown = JSON.parse(stdout);
         if (!isRecord(result) || result.agent_id !== runEnv.PAPERCLIP_AGENT_ID
           || result.run_id !== runEnv.PAPERCLIP_RUN_ID) throw new WorkRefused("receipt_mismatch", unconfirmed);
-        if (!comment && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new WorkRefused("receipt_mismatch", unconfirmed);
-        if (comment && (!isRecord(result.message) || result.message.kind !== "agent"
+        if (!mutation && (!isRecord(result.task) || result.task.id !== runEnv.PAPERCLIP_TASK_ID)) throw new WorkRefused("receipt_mismatch", unconfirmed);
+        if (checklist && (!isRecord(result.checklist) || result.checklist.issueId !== runEnv.PAPERCLIP_TASK_ID
+          || result.checklist.markerOffset !== checklist.markerOffset || result.checklist.checked !== checklist.checked
+          || typeof result.checklist.changed !== "boolean" || typeof result.checklist.descriptionSha256 !== "string"
+          || !/^[a-f0-9]{64}$/.test(result.checklist.descriptionSha256))) throw new WorkRefused("receipt_mismatch", unconfirmed);
+        if (mutation && !checklist && (!isRecord(result.message) || result.message.kind !== "agent"
           || result.message.fromAgentId !== runEnv.PAPERCLIP_AGENT_ID || result.message.fromUserId != null)) throw new WorkRefused("receipt_mismatch", unconfirmed);
         resolve(result);
       } catch (error) {
@@ -95,7 +101,7 @@ export function createAssignedWorkClient(
       }
     });
     child.stdin?.on("error", () => { /* The child status determines the outcome. */ });
-    child.stdin?.end(comment ? JSON.stringify(comment) : undefined);
+    child.stdin?.end(mutation ? JSON.stringify(mutation) : undefined);
   });
 }
 
@@ -176,6 +182,18 @@ export function assignedWorkComment(value: unknown): Comment {
   return { text, clientRequestId };
 }
 
+export function assignedWorkChecklist(value: unknown): ChecklistChange {
+  const message = "Use the description digest and marker offset from work read with a boolean checked state.";
+  if (!isRecord(value)) throw new Error(message);
+  const { descriptionSha256, markerOffset, checked } = value;
+  if (Object.keys(value).length !== 3 || typeof descriptionSha256 !== "string"
+    || !/^[a-f0-9]{64}$/.test(descriptionSha256) || typeof markerOffset !== "number"
+    || !Number.isSafeInteger(markerOffset) || markerOffset < 0 || typeof checked !== "boolean") {
+    throw new Error(message);
+  }
+  return { descriptionSha256, markerOffset, checked };
+}
+
 function failure(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
@@ -183,7 +201,7 @@ function failure(text: string): CallToolResult {
 export function createAssignedWorkServer(client: WorkClient): Server {
   const server = new Server({ name: SERVER_NAME, version: SERVER_VERSION }, {
     capabilities: { tools: {} },
-    instructions: "Use work_issue_read for the current assigned Work issue and its discussion. Post evidence with work_issue_comment when the run calls for an attributed update.",
+    instructions: "Use work_issue_read for the assigned issue and discussion. If the read includes a checklist, use work_issue_checklist to set an item when the task calls for it. Use work_issue_comment for attributed updates.",
   });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -204,24 +222,41 @@ export function createAssignedWorkServer(client: WorkClient): Server {
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
+      {
+        name: checklistTool,
+        description: "Set one checkbox on the assigned Work issue. Use the checklist descriptionSha256 and markerOffset returned by work_issue_read. If the description changed, read the issue again before retrying.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            descriptionSha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            markerOffset: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            checked: { type: "boolean" },
+          },
+          required: ["descriptionSha256", "markerOffset", "checked"],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      },
     ],
   }));
   server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     const args = params.arguments ?? {};
-    let comment: Comment | undefined;
-    if (params.name === readTool) {
-      if (Object.keys(args).length) return failure("The issue is selected by the active Work run.");
-    } else if (params.name === commentTool) {
-      try {
-        comment = assignedWorkComment(args);
-      } catch (error) {
-        return failure((error as Error).message);
-      }
-    } else {
-      return failure("Unknown assigned Work tool.");
-    }
     try {
-      const result = await client(comment);
+      let mutation: Comment | ChecklistChange | undefined;
+      switch (params.name) {
+        case readTool:
+          if (Object.keys(args).length) return failure("The issue is selected by the active Work run.");
+          break;
+        case commentTool:
+          mutation = assignedWorkComment(args);
+          break;
+        case checklistTool:
+          mutation = assignedWorkChecklist(args);
+          break;
+        default:
+          return failure("Unknown assigned Work tool.");
+      }
+      const result = await client(mutation);
       return { structuredContent: result, content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
       return failure(error instanceof Error ? error.message : "Assigned Work is unavailable.");

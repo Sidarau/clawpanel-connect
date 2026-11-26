@@ -115,7 +115,7 @@ clawpanel connect --client claude --assigned-work
 clawpanel connect --client grok --assigned-work
 ```
 
-The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
+The config passes the names of variables supplied by the managed Paperclip run. The stdio server invokes the enrolled `clawpanel-work` client with that run's identity. `work_issue_read` opens the assigned issue, planning details, and discussion. `work_issue_comment` adds an attributed comment when Work authorizes the run. Reuse the comment's request UUID after an uncertain delivery. If the read includes a checklist, `work_issue_checklist` sets one item using the same description digest, marker offset and checked state as the CLI. Run the Work commands inside the managed run so the launcher provides the approved project grant and signing identity.
 
 `--client grok` configures Grok Build on the machine running the Work client.
 
@@ -124,17 +124,24 @@ config fragment with the two scoped Work tools. Use `--output` for a new profile
 config or merge the `mcp_servers.clawpanel` entry into an existing profile. The
 launcher supplies a fresh run binding for each assignment.
 
-`clawpanel work doctor --json` checks the installed helper, run binding and signed
-access to the assigned issue. On failure it reports the affected launcher field
-names and an action for the operator. It exits with status 1 when access could
-not be verified. Credential values, local file paths and issue content stay on
-the enrolled host.
+`clawpanel work doctor --provider claude --json` checks the installed helper,
+Claude Code sign-in, and signed access to the current assignment. The signed
+receipt verifies the enrolled actor, project grant and active run together.
+When Work refuses the grant or run without distinguishing them, the report
+marks both checks unconfirmed. It exits with status 1 when a requested check
+cannot be verified. It does not emit credentials, local paths or issue content.
 
 Before dispatch, run `clawpanel work doctor --config /absolute/path/to/agent-work.json --json`
 on the enrolled host. It asks a Work helper that supports `--check-config` to
 verify the local configuration and signing key without calling Work. The result
 marks issue access as unchecked. Run Doctor inside the managed assignment to
 verify access to the specific issue and project.
+
+For a managed Hermes runner, use `--provider hermes --hermes-probe
+http://127.0.0.1:PORT/health/provider` with its local provider probe. The probe
+checks the upstream credential without a model turn and returns a bounded JSON
+response with `provider: "hermes"` and `authenticated: true`. Without a probe
+the Hermes provider check stays unchecked.
 
 ## CLI reference
 
@@ -189,6 +196,8 @@ terminals, and CI output. Local mode does not require or include hosted credenti
 ## Assigned Work on the command line
 
 An enrolled runner can use `clawpanel work read` or `clawpanel work comment < comment.json` without a native MCP client. The launcher supplies the active run, agent, company, and issue. Read returns the current assigned issue and its authorized context. Comment accepts `text` and `clientRequestId` (UUID) and returns the attributed receipt. Reuse the UUID to retry the same comment.
+
+If `clawpanel work read` returns a `checklist`, pick a marker from its `items` using the reported line number. Use `clawpanel work checklist < checklist.json` with the read's `descriptionSha256`, the item's `markerOffset` and the desired boolean `checked` state. The result identifies the assigned issue, agent and run. After a revision conflict, read the issue again before resubmitting.
 
 ## Public Square
 
