@@ -17,7 +17,8 @@ import { commerceCommand } from "./commerce.js";
 import { runSquare } from "./square.js";
 import { runConnect, runHermesConnect, runTomlConnect } from "./connect.js";
 import { FREE_TIER } from "./config.js";
-import { assignedWorkChecklist, assignedWorkComment, assignedWorkDoctor, createAssignedWorkClient, runAssignedWorkServer, workEnrollmentDoctor } from "./mcp/assigned-work.js";
+import { assignedWorkChecklist, assignedWorkComment, createAssignedWorkClient, runAssignedWorkServer } from "./mcp/assigned-work.js";
+import { workReadinessDoctor, workReadinessOptions } from "./mcp/work-readiness.js";
 import { runStdioServer, resolveWorkspaceDir, SERVER_NAME, SERVER_VERSION } from "./mcp/server.js";
 
 const HELP = `clawpanel — ClawPanel connect client + MCP server (open source, MIT)
@@ -32,7 +33,7 @@ USAGE
   clawpanel task context [--api-url ORIGIN]
   clawpanel task update [--api-url ORIGIN] < update.json
   clawpanel work read
-  clawpanel work doctor [--config FILE] [--json]
+  clawpanel work doctor [--config FILE] [--provider claude|hermes] [--hermes-probe URL] [--json]
   clawpanel work comment < comment.json
   clawpanel work checklist < checklist.json
   clawpanel square list [--query TEXT] [--api-url ORIGIN]
@@ -157,43 +158,33 @@ async function main(argv: string[]): Promise<number> {
     const action = argv[1];
     if (action === "doctor") {
       const { command, flags } = parseArgs(argv.slice(2));
-      if (command || Object.keys(flags).some((flag) => flag !== "config" && flag !== "json")
-        || (flags.json !== undefined && flags.json !== true)
-        || (flags.config !== undefined && (typeof flags.config !== "string" || !flags.config))) {
-        throw new Error("Use clawpanel work doctor [--config FILE] [--json].");
-      }
+      if (command) throw new Error("Work Doctor accepts options only. Run clawpanel work --help.");
+      const options = workReadinessOptions(flags);
       const status = { ready: "Ready", missing: "Missing", present: "Present", verified: "Verified",
         unchecked: "Unchecked", unconfirmed: "Unconfirmed", enrollment_refused: "Enrollment refused",
         run_or_grant_refused: "Run or project grant refused", issue_unavailable: "Assigned issue unavailable",
         configuration_refused: "Local configuration refused", signing_identity_refused: "Signing identity refused",
-        receipt_mismatch: "Work receipt mismatch" };
-      if (typeof flags.config === "string") {
-        const report = await workEnrollmentDoctor(flags.config);
-        const output = flags.json ? JSON.stringify(report, null, 2) : [
-          `Work helper      ${status[report.checks.launcher]}`,
-          `Local enrollment ${status[report.checks.enrollment]}`,
-          `Issue access     ${status[report.checks.assignedIssue]}`,
-          report.nextAction,
-        ].join("\n");
-        process.stdout.write(output + "\n");
-        return report.configured ? 0 : 1;
-      }
-      const report = await assignedWorkDoctor(process.env);
+        receipt_mismatch: "Work receipt mismatch", signed_out: "Signed out" };
+      const report = await workReadinessDoctor(options, process.env);
       if (flags.json) {
         process.stdout.write(JSON.stringify(report, null, 2) + "\n");
       } else {
         process.stdout.write([
-          `Work helper  ${status[report.checks.launcher]}`,
-          `Run binding  ${status[report.checks.binding]}`,
-          `Issue access ${status[report.checks.assignedIssue]}`,
-          ...(report.bindingIssues ?? []).map(({ field, problem }) => `  ${field} (${problem})`),
+          `Work helper       ${status[report.checks.launcher]}`,
+          `Provider login    ${status[report.checks.provider]}`,
+          ...("enrollment" in report.checks ? [`Local enrollment  ${status[report.checks.enrollment]}`] : []),
+          `Actor enrollment  ${status[report.checks.actorEnrollment]}`,
+          `Project grant     ${status[report.checks.projectGrant]}`,
+          `Active assignment ${status[report.checks.activeAssignment]}`,
+          ...(report.checks.assignedIssue === "run_or_grant_refused" ? [status.run_or_grant_refused] : []),
+          ...("bindingIssues" in report ? (report.bindingIssues ?? []).map(({ field, problem }) => `  ${field} (${problem})`) : []),
           ...(report.nextAction ? [report.nextAction] : []),
         ].join("\n") + "\n");
       }
       return report.ready ? 0 : 1;
     }
     if (argv.length !== 2 || (action !== "read" && action !== "comment" && action !== "checklist")) {
-      throw new Error("Use clawpanel work read, work comment or work checklist with JSON on stdin, or work doctor [--config FILE] [--json].");
+      throw new Error("Use clawpanel work read, work comment or work checklist with JSON on stdin, or work doctor. Run clawpanel work --help.");
     }
     const client = createAssignedWorkClient(process.env);
     const mutation = action === "read" ? undefined : await readJsonObject(process.stdin, "The Work " + action, 256)

@@ -124,17 +124,24 @@ config fragment with the two scoped Work tools. Use `--output` for a new profile
 config or merge the `mcp_servers.clawpanel` entry into an existing profile. The
 launcher supplies a fresh run binding for each assignment.
 
-`clawpanel work doctor --json` checks the installed helper, run binding and signed
-access to the assigned issue. On failure it reports the affected launcher field
-names and an action for the operator. It exits with status 1 when access could
-not be verified. Credential values, local file paths and issue content stay on
-the enrolled host.
+`clawpanel work doctor --provider claude --json` checks the installed helper,
+Claude Code sign-in, and signed access to the current assignment. The signed
+receipt verifies the enrolled actor, project grant and active run together.
+When Work refuses the grant or run without distinguishing them, the report
+marks both checks unconfirmed. It exits with status 1 when a requested check
+cannot be verified. It does not emit credentials, local paths or issue content.
 
 Before dispatch, run `clawpanel work doctor --config /absolute/path/to/agent-work.json --json`
 on the enrolled host. It asks a Work helper that supports `--check-config` to
 verify the local configuration and signing key without calling Work. The result
 marks issue access as unchecked. Run Doctor inside the managed assignment to
 verify access to the specific issue and project.
+
+For a managed Hermes runner, use `--provider hermes --hermes-probe
+http://127.0.0.1:PORT/health/provider` with its local provider probe. The probe
+checks the upstream credential without a model turn and returns a bounded JSON
+response with `provider: "hermes"` and `authenticated: true`. Without a probe
+the Hermes provider check stays unchecked.
 
 ## CLI reference
 
