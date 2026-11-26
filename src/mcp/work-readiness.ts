@@ -28,7 +28,8 @@ async function checkClaude(env: NodeJS.ProcessEnv): Promise<ProviderStatus> {
   const executable = await access(installed, constants.X_OK).then(() => installed, () => "claude");
   return new Promise((resolve) => {
     execFile(executable, ["auth", "status"], {
-      env: { HOME: homedir(), PATH: env.PATH ?? "/usr/bin:/bin" }, timeout: 5000, maxBuffer: 64 * 1024,
+      env: { HOME: homedir(), PATH: env.PATH ?? "/usr/bin:/bin", USER: env.USER, LOGNAME: env.LOGNAME,
+        LANG: env.LANG ?? "en_US.UTF-8", TMPDIR: env.TMPDIR }, timeout: 5000, maxBuffer: 64 * 1024,
     }, (error, stdout) => {
       if (error?.code === "ENOENT") return resolve("missing");
       try {
